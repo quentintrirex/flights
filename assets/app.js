@@ -279,7 +279,7 @@
           </div>`
         : `<div class="label">${w.error ? esc(w.error) : 'No fares match right now'}</div><p class="muted">Try more nights, more airports, a longer window or allow stops.</p>`}
       </div>
-      <p class="muted small-print enter enter-3">Checked ${ago(w.scannedAt)} · ${data.total} matching fares · prices Aviasales users found in the last 48 h. Always confirm the price before you book.</p>
+      <p class="muted small-print enter enter-3">Checked ${ago(w.scannedAt)} · ${data.total} matching fares · prices Aviasales users found in the last few days. Always confirm the price before you book.</p>
 
       <div class="tiles enter">${tiles.map(([l, v, s]) => `<div class="tile"><div class="tl">${l}</div><div class="tv num">${v}</div><div class="ts">${s}</div></div>`).join('')}</div>
 

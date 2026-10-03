@@ -11,8 +11,8 @@ Personal cheap-flight tracker and iPhone web app. Lives at `https://trirexio.com
   (tap a day to see its fares), cheapest per city / airport / weekday / airline / stops, alert history.
 - Every fare has **Book this fare** (Aviasales) and **Check on Google Flights**.
 
-Prices come from the free Travelpayouts / Aviasales Data API: the cheapest fares Aviasales users found in the last
-48 hours. Good for spotting deals; always confirm the live price before booking. Without a token the app runs on
+Prices come from the free Travelpayouts / Aviasales Data API: the cheapest fares Aviasales users found in the last few
+days. Good for spotting deals; always confirm the live price before booking. Without a token the app runs on
 clearly labelled demo prices.
 
 ## Files

@@ -20,7 +20,7 @@ function country_cities(string $cc, int $max = 5): array
     return $out;
 }
 
-/** Travelpayouts / Aviasales Data API: cheapest fares Aviasales users found in the last ~48 hours. */
+/** Travelpayouts / Aviasales Data API: cheapest fares Aviasales users found recently (usually the last few days). */
 final class TravelpayoutsProvider implements Provider
 {
     private const BASE = 'https://api.travelpayouts.com/aviasales/v3/prices_for_dates';
