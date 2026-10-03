@@ -63,7 +63,7 @@
   /* ------------------------------------------------------------ home */
 
   function spark(values) {
-    if (values.length < 2) return '<span class="muted">History starts today</span>';
+    if (values.length < 2) return '<span class="muted small">Price trend from tomorrow</span>';
     const w = 120, h = 32, min = Math.min(...values), max = Math.max(...values), span = max - min || 1;
     const pts = values.map((v, i) => [(i / (values.length - 1)) * w, h - 3 - ((v - min) / span) * (h - 6)]);
     const d = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
@@ -77,19 +77,28 @@
     return `<span class="chg ${c < 0 ? 'down' : 'up'}">${c < 0 ? '↓' : '↑'} ${Math.abs(c)}%</span>`;
   }
 
+  function vsNormal(w) {
+    if (!w.low || !w.normal) return `<span class="muted small">${w.scannedAt ? 'Learning the normal price' : ''}</span>`;
+    const r = w.low / w.normal;
+    if (r < 0.97) return `<span class="vs-mini below">${Math.round((1 - r) * 100)}% below normal</span>`;
+    if (r > 1.03) return `<span class="vs-mini above">${Math.round((r - 1) * 100)}% above normal</span>`;
+    return '<span class="vs-mini">Normal price</span>';
+  }
+
   function routeCard(w, i) {
-    const sub = `${w.origins.join(' · ')} → ${w.dest} · ${tripLabel(w)} · ${windowLabel(w)}`;
+    const sub = `${w.origins.join(', ')} → ${w.dest}`;
+    const meta = `${w.trip === 'return' ? 'Return' : 'One way'}${w.trip === 'return' ? ` · ${w.minNights}–${w.maxNights} nights` : ''} · ${windowLabel(w)}`;
     const price = w.low
       ? `<div class="p num">${eur(w.low)}</div><div class="n">${w.normal ? 'normally ' + eur(w.normal) : 'lowest found'}</div>`
       : `<div class="n">${w.error ? 'Check failed' : w.scannedAt ? 'No fares' : 'Checking…'}</div>`;
     return `<a class="route enter${w.paused ? ' paused' : ''}" style="animation-delay:${i * 50}ms" href="#/route/${w.id}">
       <div class="route-head">
-        <div><div class="route-city">${esc(placeTitle(w))}</div><div class="route-sub">${esc(sub)}</div></div>
+        <div><div class="route-city">${esc(placeTitle(w))}</div><div class="route-sub">${esc(sub)}</div><div class="route-meta">${esc(meta)}</div></div>
         <div class="route-price">${price}</div>
       </div>
       <div class="route-foot">
         ${spark(w.history)}
-        <div class="route-tags">${change(w.change)}${w.paused ? '<span class="badge">Paused</span>' : badge(w.level) || `<span class="muted">${ago(w.scannedAt)}</span>`}</div>
+        <div class="route-tags">${change(w.change)}${w.paused ? '<span class="badge">Paused</span>' : badge(w.level) || vsNormal(w)}</div>
       </div>
     </a>`;
   }
@@ -98,9 +107,17 @@
     view.classList.toggle('still', !animate);
     const ws = state.watches;
     const deals = ws.filter((w) => !w.paused && ['great', 'extreme'].includes(w.level)).length;
+    // One line that says whether prices are live and fresh; a warning when the server stopped checking.
+    const active = ws.filter((w) => !w.paused);
+    const last = Math.max(0, ...active.map((w) => w.scannedAt || 0));
+    const stale = active.length && last && Date.now() / 1000 - last > (state.everyHours * 2 + 1) * 3600;
     const demo = state.source === 'Demo data'
       ? `<div class="demo-note enter">${ICON.plane}<div><b>Demo prices.</b> Real prices start as soon as the Aviasales token is added on the server.</div></div>`
-      : '';
+      : stale
+        ? `<div class="demo-note warn enter">${ICON.refresh}<div><b>Prices were last checked ${ago(last)}.</b> The automatic check every ${state.everyHours} hours seems to have stopped. Check the scheduled task in Plesk.</div></div>`
+        : '';
+    const live = state.source !== 'Demo data' && last && !stale
+      ? `<div class="live"><i></i>Live prices · checked ${ago(last)} · every ${state.everyHours} h</div>` : '';
     if (!ws.length) {
       view.innerHTML = `${demo}<div class="empty enter">
         <svg class="art" viewBox="0 0 220 110" aria-hidden="true"><path class="arc" d="M20 90 C 70 10, 150 10, 200 90"/><circle cx="20" cy="90" r="4" fill="#0d0f14"/><circle cx="200" cy="90" r="4" fill="#0f9f62"/><circle class="plane" r="4"/></svg>
@@ -112,7 +129,7 @@
     const best = ws.filter((w) => w.low && !w.paused).sort((a, b) => a.low / (a.normal || a.low) - b.low / (b.normal || b.low))[0];
     view.innerHTML = `
       <div class="hello enter"><h1>${deals ? `${deals} cheap ${deals > 1 ? 'routes' : 'route'} right now` : 'Watching your routes'}</h1>
-      <p>${ws.length} ${ws.length > 1 ? 'routes' : 'route'} tracked${best ? ` · best: ${esc(placeTitle(best))} from ${eur(best.low)}` : ''}</p></div>
+      <p>${ws.length} ${ws.length > 1 ? 'routes' : 'route'} tracked${best ? ` · best: ${esc(placeTitle(best))} from ${eur(best.low)}` : ''}</p>${live}</div>
       ${demo}
       <div class="routes">${ws.map(routeCard).join('')}</div>
       <button class="btn primary fab" data-add>${ICON.plus} Track a route</button>`;
@@ -270,6 +287,7 @@
         ${best ? `
           <div class="label">Cheapest right now${country && best.destName ? ` · ${esc(best.destName)}` : ''}</div>
           <div class="big num">${eur(best.price)}</div>
+          ${ratio ? `<div class="vs ${ratio < 0.97 ? 'below' : ratio > 1.03 ? 'above' : ''}">${ratio < 0.97 ? `${Math.round((1 - ratio) * 100)}% below normal` : ratio > 1.03 ? `${Math.round((ratio - 1) * 100)}% above normal` : 'About the normal price'}</div>` : ''}
           <div class="hero-sub">${weekday(best.depart)} ${day(best.depart)}${best.ret ? ` – ${day(best.ret)} · ${best.nights} nights` : ''} · ${stops(best.stops)}${best.airlineName ? ' · ' + esc(best.airlineName) : ''} &nbsp;${badge(best.level)}</div>
           ${w.normal ? `<div class="meter"><div class="mark" style="left:${normalPos}%"></div><div class="pin" style="left:${normalPos}%" data-pin="${pinPos}"></div></div>
           <div class="meter-legend"><span>Steal</span><span>Normal ${eur(w.normal)}</span><span>Pricey</span></div>` : ''}
@@ -297,7 +315,8 @@
       </div>` : ''}
 
       <div class="section-title" id="fares-title">Best dates</div>
-      <div class="fares enter" id="fares">${fares.length ? fares.slice(0, 20).map((f) => fareRow(f, country)).join('') : '<p class="muted pad">No fares yet.</p>'}</div>
+      <div class="fares enter" id="fares">${fares.length ? fares.slice(0, 8).map((f) => fareRow(f, country)).join('') : '<p class="muted pad">No fares yet.</p>'}</div>
+      ${fares.length > 8 ? `<button class="btn ghost block more" data-more>Show ${fares.length - 8} more dates</button>` : ''}
 
       <div class="grid2">
         ${country ? bars(data.byCity, 'Cheapest per city') : ''}
@@ -329,6 +348,7 @@
       const r = await api('fares', null, `&id=${w.id}&day=${dayKey}`);
       $('#fares-title').innerHTML = `Leaving ${weekday(dayKey)} ${day(dayKey)} <button class="link" data-allfares>Show best dates</button>`;
       list.innerHTML = r.fares.map((f) => fareRow(f, w.kind === 'country')).join('') || '<p class="muted pad">No fares that day.</p>';
+      if ($('[data-more]')) $('[data-more]').hidden = true;
       list.classList.remove('loading');
       $('#fares-title').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (e) { toast(e.message); list.classList.remove('loading'); }
@@ -339,8 +359,9 @@
   function openSheet(html, onMount) {
     closeSheet(true);
     const root = $('#sheet-root');
-    root.innerHTML = `<div class="scrim"></div><div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div>${html}</div>`;
+    root.innerHTML = `<div class="scrim"></div><div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div><button class="x" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>${html}</div>`;
     $('.scrim', root).onclick = () => closeSheet();
+    $('.x', root).onclick = () => closeSheet();
     document.body.style.overflow = 'hidden';
     onMount && onMount($('.sheet', root));
   }
@@ -384,7 +405,7 @@
       <div class="field"><span class="lbl">Notify me about</span>${seg('alert', [['extreme', 'Only extreme'], ['great', 'Great +'], ['good', 'Every deal']], f.alert)}
         <div class="hint">Extreme = 45% or more under the normal price. Great = 30%. Good = 15%.</div>
         <input class="input" style="margin-top:10px" type="number" inputmode="numeric" id="maxPrice" placeholder="And always below € (optional), e.g. 450" value="${f.maxPrice || ''}"></div>
-      <button class="btn primary block" id="save">${w ? 'Save' : 'Start tracking'}</button>`, (sheet) => {
+      <div class="sheet-foot"><button class="btn primary block" id="save">${w ? 'Save changes' : 'Start tracking'}</button></div>`, (sheet) => {
       const destBox = $('#dest-box', sheet);
       const renderDest = () => {
         if (f.dest) {
@@ -462,7 +483,7 @@
         } catch (err) {
           toast(err.message);
           btn.disabled = false;
-          btn.textContent = w ? 'Save' : 'Start tracking';
+          btn.textContent = w ? 'Save changes' : 'Start tracking';
         }
       };
     });
@@ -539,13 +560,19 @@
   }
 
   document.addEventListener('click', async (e) => {
-    const t = e.target.closest('[data-add],[data-edit],[data-scan],[data-pause],[data-delete],[data-fare],[data-back],[data-month],[data-day],[data-range] button,[data-allfares]');
+    const t = e.target.closest('[data-more],[data-add],[data-edit],[data-scan],[data-pause],[data-delete],[data-fare],[data-back],[data-month],[data-day],[data-range] button,[data-allfares]');
     if (!t) return;
     if (t.matches('[data-fare]')) {
       if (e.target.closest('a')) return;
       const open = t.classList.contains('open');
       $$('.fare.open').forEach((x) => x.classList.remove('open'));
       t.classList.toggle('open', !open);
+      return;
+    }
+    if (t.matches('[data-more]')) {
+      const w = routeData.watch;
+      $('#fares').innerHTML = routeData.fares.map((f) => fareRow(f, w.kind === 'country')).join('');
+      t.hidden = true;
       return;
     }
     if (t.matches('[data-back]')) { location.hash = '#/'; return; }
@@ -562,7 +589,8 @@
     if (t.matches('[data-allfares]')) {
       const w = routeData.watch;
       $('#fares-title').textContent = 'Best dates';
-      $('#fares').innerHTML = routeData.fares.slice(0, 20).map((f) => fareRow(f, w.kind === 'country')).join('');
+      $('#fares').innerHTML = routeData.fares.slice(0, 8).map((f) => fareRow(f, w.kind === 'country')).join('');
+      $('[data-more]') && ($('[data-more]').hidden = false);
       $$('.cd.on').forEach((c) => c.classList.remove('on'));
       return;
     }

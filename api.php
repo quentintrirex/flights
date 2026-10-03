@@ -185,6 +185,7 @@ try {
                 'watches' => array_map('watch_view', $watches),
                 'unread' => (int) q('SELECT COUNT(*) FROM alerts WHERE read_at IS NULL')->fetchColumn(),
                 'source' => provider()->name(),
+                'everyHours' => (int) config()['scan_every_hours'],
                 'vapid' => vapid_public(),
             ]);
 

@@ -1,5 +1,5 @@
 /* Service worker: push notifications and a tiny offline shell. */
-const CACHE = 'flights-v2';
+const CACHE = 'flights-v3';
 const SHELL = ['./', 'assets/app.css', 'assets/app.js', 'places.php', 'assets/icon.svg'];
 
 self.addEventListener('install', (e) => {
