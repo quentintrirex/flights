@@ -46,6 +46,8 @@
     chev: '<svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>',
     pause: '<svg viewBox="0 0 24 24"><path d="M9 5v14M15 5v14"/></svg>',
     play: '<svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7V5z"/></svg>',
+    info: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>',
+    bell: '<svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>',
     cal: '<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>',
     share: '<svg viewBox="0 0 24 24"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7"/></svg>',
     copy: '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>',
@@ -99,28 +101,84 @@
     return `<span class="chg ${c < 0 ? 'down' : 'up'}">${c < 0 ? '↓' : '↑'} ${Math.abs(c)}%</span>`;
   }
 
+  /** How today's cheapest fare compares with the usual cheapest fare, in words. */
   function vsNormal(w) {
-    if (!w.low || !w.normal) return `<span class="muted small">${w.scannedAt ? 'Learning prices · deals from day 3' : ''}</span>`;
+    if (!w.low) return '';
+    if (!w.normal) return learning(w);
     const r = w.low / w.normal;
-    if (r < 0.97) return `<span class="vs-mini below">${Math.round((1 - r) * 100)}% below normal</span>`;
-    if (r > 1.03) return `<span class="vs-mini above">${Math.round((r - 1) * 100)}% above normal</span>`;
-    return '<span class="vs-mini">Normal price</span>';
+    if (r < 0.97) return `<span class="vs-mini below">${Math.round((1 - r) * 100)}% below usual</span>`;
+    if (r > 1.03) return `<span class="vs-mini above">${Math.round((r - 1) * 100)}% above usual</span>`;
+    return '<span class="vs-mini">Usual price</span>';
+  }
+
+  /** Until two earlier days of prices exist there is nothing to compare with: say so, with progress. */
+  function learning(w) {
+    const day = Math.min(3, Math.max(1, w.days || 1));
+    return `<span class="learn" title="Deals are price drops compared with the usual cheapest fare. That needs a few days of prices first.">
+      <span class="learn-bar">${[1, 2, 3].map((d) => `<i class="${d <= day ? 'on' : ''}"></i>`).join('')}</span>Learning prices · day ${day} of 3</span>`;
+  }
+
+  /** The cheapest trip in one readable line: when, how long, with whom, how many stops. */
+  function tripLine(b, w) {
+    if (!b) return '';
+    const where = w.kind === 'country' && b.destName ? `<b>${esc(b.destName)}</b> · ` : '';
+    return `${where}${weekday(b.depart)} ${day(b.depart)}${b.ret ? ` – ${weekday(b.ret)} ${day(b.ret)} · ${b.nights} ${b.nights === 1 ? 'night' : 'nights'}` : ''} · ${b.airlineName ? esc(b.airlineName) + ' · ' : ''}${stops(b.stops).toLowerCase()}`;
+  }
+
+  /** The route in plain words: the best option, whether it is a deal, and when you will hear from the app. */
+  function summaryCard(w, f, ratio, country) {
+    const where = country && f.destName ? `${esc(f.destName)}, ${esc(w.city)}` : esc(w.city);
+    const leave = `<b>${weekday(f.depart)} ${day(f.depart)}</b>${f.depTime ? ` at ${esc(f.depTime)}` : ''}`;
+    const when = f.ret ? `leaving ${leave} and back <b>${weekday(f.ret)} ${day(f.ret)}</b> (${f.nights} nights)` : `leaving ${leave}`;
+    const how = `${f.airlineName ? `with <b>${esc(f.airlineName)}</b>, ` : ''}${f.stops === 0 ? 'direct' : f.stops === 1 ? '1 stop' : `${f.stops} stops`}`;
+    const pct = ratio ? Math.round(Math.abs(1 - ratio) * 100) : 0;
+    let verdict;
+    if (!w.normal) verdict = `Prices are still being learned (day ${Math.min(3, Math.max(1, w.days || 1))} of 3). From day 3 the app can tell whether a price is a real drop.`;
+    else if (ratio < 0.97) verdict = `That is <b>${pct}% below</b> the usual cheapest fare of ${eur(w.normal)}${LEVEL[f.level] ? `: a <b>${LEVEL[f.level].toLowerCase()}</b>` : ''}.`;
+    else if (ratio > 1.03) verdict = `That is ${pct}% above the usual cheapest fare of ${eur(w.normal)}, so prices are higher than normal right now.`;
+    else verdict = `That is about the usual cheapest fare (${eur(w.normal)}).`;
+    const level = { extreme: 'an extreme deal (45% or more below usual)', great: 'a great deal (30% or more below usual)', good: 'any deal (15% or more below usual)' }[w.alert] || 'a great deal';
+    const alert = w.paused ? 'Alerts are paused for this route.' : `You get a notification when a fare becomes ${level}${w.maxPrice ? ` or drops below ${eur(w.maxPrice)}` : ''}.`;
+    return `<div class="summary enter">
+      <div class="sum-h">${ICON.info}<b>In short</b><button class="link" data-howdeals>How deals work</button></div>
+      <p>The cheapest trip to ${where} is <b>${eur(f.price)} ${f.ret ? 'return' : 'one way'}</b> per person, ${how}, ${when}.</p>
+      <p>${verdict}</p>
+      <p class="sum-alert">${ICON.bell}<span>${alert}</span></p>
+    </div>`;
+  }
+
+  function howDeals() {
+    openSheet(`
+      <h2>How deals work</h2>
+      <div class="how">
+        <p><b>What is a deal?</b> A real price drop. Every check the app notes the cheapest fare for the route. The <b>usual cheapest fare</b> is the middle of those daily lows over the last 30 days. Today’s cheapest fare is compared with that.</p>
+        <div class="how-levels">
+          <div><span class="badge good">Good deal</span><span>15% or more below usual</span></div>
+          <div><span class="badge great">Great deal</span><span>30% or more below usual</span></div>
+          <div><span class="badge extreme">Extreme deal</span><span>45% or more below usual</span></div>
+        </div>
+        <p><b>Learning period.</b> A new route needs prices from two earlier days before it can compare, so deal labels appear from day 3.</p>
+        <p><b>Notifications.</b> You choose the level per route (Edit → Notify me about), and you can add a price: below that you always hear about it. After an alert, the same route only alerts again within a week if the fare is clearly better.</p>
+        <p><b>Where prices come from.</b> Aviasales: fares other travellers found in the last days. They can be a few days old, so always confirm the price on the booking site.</p>
+      </div>`);
   }
 
   function routeCard(w, i) {
     const sub = `${w.origins.join(', ')} → ${w.dest}`;
-    const meta = `${w.trip === 'return' ? 'Return' : 'One way'}${w.trip === 'return' ? ` · ${w.minNights}–${w.maxNights} nights` : ''} · ${windowLabel(w)}`;
+    const meta = `${w.trip === 'return' ? 'Return' : 'One way'}${w.trip === 'return' ? ` · ${w.minNights}–${w.maxNights} nights` : ''} · ${windowLabel(w)}${w.maxStops === 0 ? ' · direct only' : ''}`;
     const price = w.low
-      ? `<div class="p num">${eur(w.low)}</div><div class="n">${w.normal ? 'usually ' + eur(w.normal) : 'lowest found'}</div>`
-      : `<div class="n">${w.error ? 'Check failed' : w.scannedAt ? 'No fares' : 'Checking…'}</div>`;
+      ? `<div class="p num">${eur(w.low)}</div><div class="n">${w.trip === 'return' ? 'return' : 'one way'}, per person</div>`
+      : `<div class="n">${w.error ? 'Check failed' : w.scannedAt ? 'No fares right now' : 'Checking…'}</div>`;
+    const status = w.paused ? '<span class="badge">Paused</span>' : badge(w.level) || vsNormal(w);
     return `<a class="route enter${w.paused ? ' paused' : ''}" style="animation-delay:${i * 50}ms" href="#/route/${w.id}">
       <div class="route-head">
         <div><div class="route-city">${esc(placeTitle(w))}</div><div class="route-sub">${esc(sub)}</div><div class="route-meta">${esc(meta)}</div></div>
         <div class="route-price">${price}</div>
       </div>
+      ${w.best ? `<div class="route-trip">${ICON.cal}<span>${tripLine(w.best, w)}</span></div>` : ''}
       <div class="route-foot">
-        ${spark(w.history)}
-        <div class="route-tags">${change(w.change)}${w.paused ? '<span class="badge">Paused</span>' : badge(w.level) || vsNormal(w)}</div>
+        <div class="route-tags">${status}${w.normal ? change(w.change) : ''}</div>
+        ${w.history.length > 1 ? spark(w.history) : ''}
       </div>
     </a>`;
   }
@@ -148,7 +206,8 @@
         <button class="btn primary" data-add>${ICON.plus} Track a route</button></div>`;
       return;
     }
-    const best = ws.filter((w) => w.low && !w.paused).sort((a, b) => a.low / (a.normal || a.low) - b.low / (b.normal || b.low))[0];
+    const judged = ws.filter((w) => w.low && w.normal && !w.paused);
+    const best = judged.length ? judged.sort((a, b) => a.low / a.normal - b.low / b.normal)[0] : ws.filter((w) => w.low && !w.paused).sort((a, b) => a.low - b.low)[0];
     let sort = 'deal';
     try { sort = localStorage.getItem('fl-sort') || 'deal'; } catch { /* private mode */ }
     const SORTS = { deal: 'Best deal', price: 'Cheapest', name: 'A–Z', recent: 'Newest' };
@@ -161,7 +220,7 @@
     }[sort] || (() => 0));
     view.innerHTML = `
       <div class="hello enter"><h1>${deals ? `${deals} cheap ${deals > 1 ? 'routes' : 'route'} right now` : 'Watching your routes'}</h1>
-      <p>${ws.length} ${ws.length > 1 ? 'routes' : 'route'} tracked${best ? ` · best: ${esc(placeTitle(best))} from ${eur(best.low)}` : ''}</p>${live}</div>
+      <p>${ws.length} ${ws.length > 1 ? 'routes' : 'route'} tracked${best ? ` · ${judged.length ? 'best deal' : 'cheapest'}: ${esc(placeTitle(best))} from ${eur(best.low)}` : ''}</p>${live}</div>
       ${demo}
       ${ws.length > 2 ? `<div class="sortbar enter">${Object.entries(SORTS).map(([k, l]) => `<button class="pill${k === sort ? ' on' : ''}" data-sort="${k}">${l}</button>`).join('')}</div>` : ''}
       <div class="routes">${sorted.map(routeCard).join('')}</div>
@@ -393,7 +452,7 @@
     const meta = [w.trip === 'return' ? `Return · ${w.minNights}–${w.maxNights} nights` : 'One way', windowLabel(w),
       w.maxStops < 0 ? 'any stops' : w.maxStops === 0 ? 'direct only' : 'max 1 stop'].join(' · ');
     const vsCls = ratio ? (ratio < 0.97 ? 'below' : ratio > 1.03 ? 'above' : '') : '';
-    const vsTxt = ratio ? (ratio < 0.97 ? `${Math.round((1 - ratio) * 100)}% below normal` : ratio > 1.03 ? `${Math.round((ratio - 1) * 100)}% above normal` : 'About the normal price') : '';
+    const vsTxt = ratio ? (ratio < 0.97 ? `${Math.round((1 - ratio) * 100)}% below usual` : ratio > 1.03 ? `${Math.round((ratio - 1) * 100)}% above usual` : 'About the normal price') : '';
     const insights = [country ? bars(data.byCity, 'Cheapest per city') : '',
       bars(data.byOrigin, 'Cheapest per departure airport', (r) => `${esc(originName(r.key))} <small>${esc(r.key)}</small>`),
       bars(data.byNights, 'Cheapest by trip length'), bars(data.byWeekday, 'Cheapest day of the week to leave'), bars(data.byStops, 'Direct or with stops')].join('');
@@ -412,7 +471,7 @@
         ${best ? `
         <div class="dh-price">
           <div>
-            <div class="dh-label">Cheapest now${air.codes.length ? ` · ${esc(air.codes.map(airlineName).join(', '))}` : ''}</div>
+            <div class="dh-label">Cheapest trip · ${w.trip === 'return' ? 'return' : 'one way'}, per person${air.codes.length ? ` · ${esc(air.codes.map(airlineName).join(', '))}` : ''}</div>
             <div class="dh-big num">${eur(best.price)}</div>
           </div>
           <div class="dh-tags">${ratio ? `<span class="dh-vs ${vsCls}">${vsTxt}</span>` : ''}${badge(best.level)}</div>
@@ -433,6 +492,7 @@
           ? `<div class="dh-empty"><b>No fares from ${esc(air.codes.map(airlineName).join(', '))} right now</b><button class="btn glass small" data-air="">Show all airlines</button></div>`
           : `<div class="dh-empty"><b>${w.error ? esc(w.error) : 'No fares match right now'}</b><span>Try more nights, more airports, a longer window or allow stops${w.airlines.length ? ', or more airlines' : ''}.</span></div>`}
       </section>
+      ${best ? summaryCard(w, best, ratio, country) : ''}
       <p class="d-print">Checked ${ago(w.scannedAt)} · ${data.total} matching fares · found by Aviasales users in the last few days</p>
 
       ${airChips(data)}
@@ -550,7 +610,7 @@
       <div class="field"><span class="lbl">Notify me about</span>${seg('alert', [['extreme', 'Only extreme'], ['great', 'Great +'], ['good', 'Every deal']], f.alert)}
         <div class="hint">A deal is a real price drop: the cheapest fare compared with the usual cheapest fare of the last 30 days. Extreme = 45% lower, great = 30%, good = 15%.</div>
         <input class="input" style="margin-top:10px" type="number" inputmode="numeric" id="maxPrice" placeholder="And always below € (optional), e.g. 450" value="${f.maxPrice || ''}"></div>
-      <div class="sheet-foot"><button class="btn primary block" id="save">${w ? 'Save changes' : 'Start tracking'}</button></div>`, (sheet) => {
+      <div class="sheet-foot"><p class="edit-sum" id="edit-sum"></p><button class="btn primary block" id="save">${w ? 'Save changes' : 'Start tracking'}</button></div>`, (sheet) => {
       const destBox = $('#dest-box', sheet);
       const renderDest = () => {
         if (f.dest) {
@@ -670,6 +730,25 @@
         if (s.dataset.seg === 'trip') $('#nights-field', sheet).hidden = v === 'oneway';
         if (s.dataset.seg === 'trip' || s.dataset.seg === 'maxStops') loadAirlines();
       })));
+      // A plain-language summary of what will be tracked, kept up to date while you edit.
+      const sumEl = $("#edit-sum", sheet);
+      const updateSum = () => {
+        const names = f.origins.map(originName);
+        const from = names.length > 2 ? names.slice(0, -1).join(", ") + " or " + names[names.length - 1] : names.join(" or ");
+        const to = !f.dest ? "…" : f.kind === "country" ? "anywhere in " + f.city : f.city;
+        const minN = +$("#minN", sheet).value || 7, maxN = Math.max(minN, +$("#maxN", sheet).value || 21);
+        const leaving = when === "custom" ? ($("#dFrom", sheet).value && $("#dTo", sheet).value ? "leaving between " + day($("#dFrom", sheet).value) + " and " + day($("#dTo", sheet).value) : "on dates you pick")
+          : "leaving in the next " + (when === "1" ? "month" : when + " months");
+        const st = f.maxStops === 0 ? "direct flights only" : f.maxStops === 1 ? "max 1 stop" : "any number of stops";
+        const al = f.airlines.length ? "only " + f.airlines.map(airlineName).join(", ") : "any airline";
+        const lvl = { extreme: "extreme deals", great: "great deals", good: "every deal" }[f.alert];
+        const mp = +$("#maxPrice", sheet).value;
+        sumEl.innerHTML = "<b>" + (f.trip === "return" ? "Return trips" : "One-way flights") + "</b> from " + esc(from || "…") + " to <b>" + esc(to) + "</b>"
+          + (f.trip === "return" ? ", " + minN + "–" + maxN + " nights" : "") + ", " + leaving + ", " + st + ", " + esc(al) + ". Alerts for " + lvl + (mp ? " or below " + eur(mp) : "") + ".";
+      };
+      sheet.addEventListener("input", updateSum);
+      sheet.addEventListener("click", () => setTimeout(updateSum, 0));
+      updateSum();
       $('#save', sheet).onclick = async (e) => {
         if (!f.origins.length) return toast('Pick at least one airport to fly from');
         if (!f.dest) return toast('Pick a destination', 'Type a city or country and tap it in the list.');
@@ -760,17 +839,43 @@
     updateBell();
   }
 
+  const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /** Prices count up to their value once, quickly, when a screen opens (skipped for reduced motion). */
+  function countUp(root = view) {
+    if (calm()) return;
+    $$('.dh-big, .route-price .p', root).forEach((el) => {
+      const to = parseInt(el.textContent.replace(/[^\d]/g, ''), 10);
+      if (!to || el.dataset.counted) return;
+      el.dataset.counted = '1';
+      const from = Math.round(to * 0.82), t0 = performance.now(), dur = 520;
+      const step = (now) => {
+        const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+        el.textContent = eur(Math.round(from + (to - from) * e));
+        if (p < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    });
+  }
+
+  let depth = 0;
   async function render() {
     const m = location.hash.match(/^#\/route\/(\d+)/);
     window.scrollTo(0, 0);
     view.classList.remove('still');
     clearTimeout(pollTimer);
-    if (m) return route(+m[1]);
+    // Slide in the direction of travel: deeper screens from the right, back from the left.
+    const d = m ? 1 : 0;
+    view.classList.remove('nav-fwd', 'nav-back');
+    if (d !== depth && !calm()) { void view.offsetWidth; view.classList.add(d > depth ? 'nav-fwd' : 'nav-back'); }
+    depth = d;
+    if (m) { await route(+m[1]); countUp(); return; }
     home();
+    countUp();
   }
 
   document.addEventListener('click', async (e) => {
-    const t = e.target.closest('[data-more],[data-add],[data-edit],[data-copy],[data-sort],[data-scan],[data-pause],[data-delete],[data-fare],[data-back],[data-month],[data-day],[data-range] button,[data-allfares],[data-air],[data-tab]');
+    const t = e.target.closest('[data-more],[data-add],[data-edit],[data-copy],[data-howdeals],[data-sort],[data-scan],[data-pause],[data-delete],[data-fare],[data-back],[data-month],[data-day],[data-range] button,[data-allfares],[data-air],[data-tab]');
     if (!t) return;
     if (t.matches('[data-tab]')) {
       const k = t.dataset.tab;
@@ -802,6 +907,7 @@
     if (t.matches('[data-add]')) return editSheet(null);
     if (t.matches('[data-edit]')) return editSheet(routeData.watch);
     if (t.matches('[data-copy]')) return editSheet(null, routeData.watch);
+    if (t.matches('[data-howdeals]')) return howDeals();
     if (t.matches('[data-sort]')) { try { localStorage.setItem('fl-sort', t.dataset.sort); } catch { /* private mode */ } home(false); return; }
     if (t.matches('[data-month]')) {
       $$('[data-month]').forEach((b) => b.classList.toggle('on', b === t));

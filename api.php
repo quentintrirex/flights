@@ -44,6 +44,17 @@ function watch_view(array $w): array
         'change' => $prev && $w['low_price'] ? round(($w['low_price'] - $prev) / $prev * 100) : null,
         'cities' => $w['kind'] === 'country' ? array_map(fn($c) => city_info($c)[0] ?? $c, country_cities($w['dest'], 6)) : [],
         'history' => array_reverse(array_map('intval', $hist)),
+        // The cheapest trip right now, so a route card can say when, with whom and how.
+        'best' => (function () use ($w) {
+            if (!$w['scanned_at']) return null;
+            $f = q('SELECT origin, dest, dest_name, depart, ret, nights, price, airline, stops, dep_time FROM fares WHERE watch_id=? AND last_seen=? ORDER BY price, depart LIMIT 1',
+                   [$w['id'], (int) $w['scanned_at']])->fetch();
+            return $f ? ['origin' => $f['origin'], 'dest' => $f['dest'], 'destName' => $f['dest_name'], 'depart' => $f['depart'], 'ret' => $f['ret'],
+                         'nights' => $f['nights'] ? (int) $f['nights'] : null, 'price' => (int) $f['price'], 'airlineName' => airline_name($f['airline']),
+                         'stops' => (int) $f['stops'], 'depTime' => $f['dep_time']] : null;
+        })(),
+        // Deal levels need two earlier days of prices: how many days of prices we have so far.
+        'days' => (int) q('SELECT COUNT(*) FROM history WHERE watch_id=?', [$w['id']])->fetchColumn(),
     ];
 }
 
