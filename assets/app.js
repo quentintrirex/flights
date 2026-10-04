@@ -112,6 +112,17 @@
   }
 
   /** Until two earlier days of prices exist there is nothing to compare with: say so, with progress. */
+  /** One verdict pill for any price against the usual cheapest fare: the same five labels everywhere. */
+  function verdict(price, normal) {
+    if (!price || !normal) return '';
+    const r = price / normal;
+    if (r <= 0.55) return '<span class="badge extreme">Extreme deal</span>';
+    if (r <= 0.70) return '<span class="badge great">Great deal</span>';
+    if (r <= 0.85) return '<span class="badge good">Good deal</span>';
+    if (r <= 1.10) return '<span class="badge normal">Normal price</span>';
+    return '<span class="badge high">Higher than usual</span>';
+  }
+
   function learning(w) {
     const day = Math.min(3, Math.max(1, w.days || 1));
     return `<span class="learn" title="Deals are price drops compared with the usual cheapest fare. That needs a few days of prices first.">
@@ -133,8 +144,8 @@
     const how = `${f.airlineName ? `with <b>${esc(f.airlineName)}</b>, ` : ''}${f.stops === 0 ? 'direct' : f.stops === 1 ? '1 stop' : `${f.stops} stops`}`;
     const pct = ratio ? Math.round(Math.abs(1 - ratio) * 100) : 0;
     let verdict;
-    if (!w.normal) verdict = `Prices are still being learned (day ${Math.min(3, Math.max(1, w.days || 1))} of 3). From day 3 the app can tell whether a price is a real drop.`;
-    else if (ratio < 0.97) verdict = `That is <b>${pct}% below</b> the usual cheapest fare of ${eur(w.normal)}${LEVEL[f.level] ? `: a <b>${LEVEL[f.level].toLowerCase()}</b>` : ''}.`;
+    if (!w.normal) verdict = 'There are not enough departure dates yet to judge this price.';
+    else if (ratio < 0.97) verdict = `That is <b>${pct}% below</b> the usual cheapest fare of ${eur(w.normal)}${LEVEL[f.level] ? `: ${f.level === 'extreme' ? 'an' : 'a'} <b>${LEVEL[f.level].toLowerCase()}</b>` : ''}.`;
     else if (ratio > 1.03) verdict = `That is ${pct}% above the usual cheapest fare of ${eur(w.normal)}, so prices are higher than normal right now.`;
     else verdict = `That is about the usual cheapest fare (${eur(w.normal)}).`;
     const level = { extreme: 'an extreme deal (45% or more below usual)', great: 'a great deal (30% or more below usual)', good: 'any deal (15% or more below usual)' }[w.alert] || 'a great deal';
@@ -156,8 +167,10 @@
           <div><span class="badge good">Good deal</span><span>15% or more below usual</span></div>
           <div><span class="badge great">Great deal</span><span>30% or more below usual</span></div>
           <div><span class="badge extreme">Extreme deal</span><span>45% or more below usual</span></div>
+          <div><span class="badge normal">Normal price</span><span>around the usual cheapest fare</span></div>
+          <div><span class="badge high">Higher than usual</span><span>more than 10% above it</span></div>
         </div>
-        <p><b>Learning period.</b> A new route needs prices from two earlier days before it can compare, so deal labels appear from day 3.</p>
+        <p><b>New routes.</b> On the first days there are no earlier prices yet, so the cheapest fare is compared with a typical cheap fare among your other departure dates. After two days it compares with the previous days.</p>
         <p><b>Notifications.</b> You choose the level per route (Edit → Notify me about), and you can add a price: below that you always hear about it. After an alert, the same route only alerts again within a week if the fare is clearly better.</p>
         <p><b>Where prices come from.</b> Aviasales: fares other travellers found in the last days. They can be a few days old, so always confirm the price on the booking site.</p>
       </div>`);
@@ -169,7 +182,7 @@
     const price = w.low
       ? `<div class="p num">${eur(w.low)}</div><div class="n">${w.trip === 'return' ? 'return' : 'one way'}, per person</div>`
       : `<div class="n">${w.error ? 'Check failed' : w.scannedAt ? 'No fares right now' : 'Checking…'}</div>`;
-    const status = w.paused ? '<span class="badge">Paused</span>' : badge(w.level) || vsNormal(w);
+    const status = w.paused ? '<span class="badge normal">Paused</span>' : verdict(w.low, w.normal);
     return `<a class="route enter${w.paused ? ' paused' : ''}" style="animation-delay:${i * 50}ms" href="#/route/${w.id}">
       <div class="route-head">
         <div><div class="route-city">${esc(placeTitle(w))}</div><div class="route-sub">${esc(sub)}</div><div class="route-meta">${esc(meta)}</div></div>
@@ -288,6 +301,9 @@
     const [y, m] = month.split('-').map(Number);
     const first = new Date(y, m - 1, 1), days = new Date(y, m, 0).getDate();
     const lead = (first.getDay() + 6) % 7;
+    // Colour by rank among all departure days: the cheapest tenth green, the next fifth light green, the dearest third tinted.
+    const all = Object.values(cal).sort((a, b) => a - b);
+    const rank = (p) => { const i = all.indexOf(p) / Math.max(1, all.length - 1); return i <= 0.1 ? "c-g" : i <= 0.3 ? "c-o" : i <= 0.67 ? "c-n" : "c-h"; };
     let cells = '';
     for (let i = 0; i < lead; i++) cells += '<div class="cd empty"></div>';
     for (let d = 1; d <= days; d++) {
@@ -295,7 +311,7 @@
       const p = cal[key];
       const out = key < from || key > to;
       cells += p
-        ? `<button class="cd ${priceClass(p, normal)}" data-day="${key}" style="animation-delay:${d * 8}ms"><span>${d}</span><b>${p >= 1000 ? Math.round(p / 100) / 10 + 'k' : p}</b></button>`
+        ? `<button class="cd ${rank(p)}" data-day="${key}" style="animation-delay:${d * 8}ms"><span>${d}</span><b>${p >= 1000 ? Math.round(p / 100) / 10 + 'k' : p}</b></button>`
         : `<div class="cd none${out ? ' out' : ''}"><span>${d}</span></div>`;
     }
     return `<div class="cal-head">${['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d) => `<span>${d}</span>`).join('')}</div><div class="cal">${cells}</div>`;
@@ -441,7 +457,7 @@
 
     const tiles = [
       ['Lowest now', best ? eur(best.price) : '–', w.change ? change(w.change) + ' since yesterday' : ''],
-      ['Usual lowest', w.normal ? eur(w.normal) : '–', w.normal ? 'cheapest fare on a typical day' : 'learning, ready on day 3'],
+      ['Usual lowest', w.normal ? eur(w.normal) : '–', w.normal ? 'cheapest fare on a typical day' : 'needs more dates'],
       ['Lowest ever seen', st.lowestEver ? eur(st.lowestEver) : '–', st.lowestEverDay ? 'on ' + day(st.lowestEverDay) : ''],
       ['Last 7 days', st.week !== null ? `${st.week > 0 ? '+' : ''}${st.week}%` : '–', st.week !== null ? (st.week < 0 ? 'getting cheaper' : st.week > 0 ? 'getting pricier' : 'steady') : `${st.days} ${st.days === 1 ? 'day' : 'days'} of history`],
     ];
@@ -471,10 +487,10 @@
         ${best ? `
         <div class="dh-price">
           <div>
-            <div class="dh-label">Cheapest trip · ${w.trip === 'return' ? 'return' : 'one way'}, per person${air.codes.length ? ` · ${esc(air.codes.map(airlineName).join(', '))}` : ''}</div>
-            <div class="dh-big num">${eur(best.price)}</div>
+            <div class="dh-label">${w.trip === 'return' ? 'Cheapest return trip' : 'Cheapest one-way flight'}${air.codes.length ? ` · ${esc(air.codes.map(airlineName).join(', '))}` : ''}</div>
+            <div class="dh-big"><span class="num">${eur(best.price)}</span><small class="pp">per person</small></div>
           </div>
-          <div class="dh-tags">${ratio ? `<span class="dh-vs ${vsCls}">${vsTxt}</span>` : ''}${badge(best.level)}</div>
+          <div class="dh-tags">${verdict(best.price, w.normal)}${ratio ? `<span class="dh-vs ${vsCls}">${vsTxt}</span>` : ''}</div>
         </div>
         <button class="dh-trip" data-fare="${+best.id}">
           ${airMark(best.airline)}
@@ -506,7 +522,7 @@
           <div class="months">${months.map((m, i) => `<button class="m${m === bestMonth ? ' on' : ''}" data-month="${m}"><div class="bar${m === bestMonth ? ' best' : ''}" style="height:${14 + ((byMonth[m] - mMin) / (mMax - mMin || 1)) * 42}px;animation-delay:${i * 40}ms"></div><span>${MONTHS[+m.slice(5) - 1]}</span><em class="num">${eur(byMonth[m])}</em></button>`).join('')}</div>
           <div class="cal-title" id="cal-title">${MONTHS_LONG[+bestMonth.slice(5) - 1]} ${bestMonth.slice(0, 4)}</div>
           <div id="cal-box">${calendar(data.calendar, w.normal, bestMonth, w.from, w.to)}</div>
-          <div class="cal-legend"><span class="c-x">Steal</span><span class="c-g">Great</span><span class="c-o">Good</span><span class="c-n">Normal</span><span class="c-h">Pricey</span></div>
+          <div class="cal-legend"><span class="c-g">Cheapest days</span><span class="c-o">Cheap</span><span class="c-n">Typical</span><span class="c-h">Pricier</span></div>
         </div>` : ''}
         <div class="section-title" id="fares-title">Best dates</div>
         <div class="fares" id="fares">${fares.length ? fares.slice(0, 8).map((f) => fareRow(f, country)).join('') : '<p class="muted pad">No fares yet.</p>'}</div>
@@ -844,7 +860,7 @@
   /** Prices count up to their value once, quickly, when a screen opens (skipped for reduced motion). */
   function countUp(root = view) {
     if (calm()) return;
-    $$('.dh-big, .route-price .p', root).forEach((el) => {
+    $$('.dh-big .num, .route-price .p', root).forEach((el) => {
       const to = parseInt(el.textContent.replace(/[^\d]/g, ''), 10);
       if (!to || el.dataset.counted) return;
       el.dataset.counted = '1';

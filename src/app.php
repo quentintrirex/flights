@@ -243,7 +243,16 @@ function scan_watch(array $w, ?Provider $p = null): array
         // Until two earlier days are known the route is still learning (no deal levels yet).
         $hist = q('SELECT low FROM history WHERE watch_id=? AND day>=? AND day<?',
                   [$w['id'], date('Y-m-d', $t - 30 * 86400), $today])->fetchAll(PDO::FETCH_COLUMN);
-        $normal = count($hist) >= 2 ? median(array_map('intval', $hist)) : null;
+        // A brand-new route has no earlier days yet: then compare with a typical CHEAP fare among the
+        // other departure dates (the 25th percentile of the daily lows), so only a date that stands
+        // out from the cheaper ones counts as a deal, and every route shows a verdict from day one.
+        if (count($hist) >= 2) {
+            $normal = median(array_map('intval', $hist));
+        } else {
+            $lows = array_values($perDay);
+            sort($lows);
+            $normal = count($lows) >= 8 ? (int) round($lows[(int) floor((count($lows) - 1) * 0.25)]) : null;
+        }
 
         $up = $db->prepare('INSERT INTO fares(watch_id,k,origin,dest,dest_name,depart,ret,nights,price,airline,stops,duration,link,first_seen,last_seen,
                 dep_time,ret_time,stops_out,stops_back,dur_out,dur_back,flight_no)

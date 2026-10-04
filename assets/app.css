@@ -499,50 +499,39 @@ input[type=date].input { -webkit-appearance: none; appearance: none; min-height:
 .pill-btn:active { transform: scale(.96); }
 .pill-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
-.dhero {
-  position: relative; overflow: hidden; padding: 22px 20px 20px; border-radius: 26px; color: #fff; isolation: isolate;
-  background: radial-gradient(120% 80% at 100% 0%, rgba(24,195,126,.32) 0%, rgba(24,195,126,0) 55%), linear-gradient(165deg, #1a1f2b 0%, #0d0f14 70%);
-  box-shadow: 0 24px 60px -28px rgba(13,15,20,.6);
-}
-/* A dotted flight arc in the corner */
-.dhero::after {
-  content: ""; position: absolute; z-index: -1; top: 14px; right: -10px; width: 220px; height: 110px; opacity: .35;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 220 110'%3E%3Cpath d='M10 100 C 60 10, 160 0, 210 60' fill='none' stroke='%23fff' stroke-width='2' stroke-dasharray='1 7' stroke-linecap='round'/%3E%3Ccircle cx='210' cy='60' r='4' fill='%2318c37e'/%3E%3C/svg%3E") no-repeat center / contain;
-}
-.dh-route { font-size: 12px; font-weight: 700; letter-spacing: .08em; color: rgba(255,255,255,.55); }
-.dh-route i { font-style: normal; color: #18c37e; margin: 0 2px; }
-.dhero h1 { margin: 6px 0 4px; font-size: 30px; line-height: 1.1; letter-spacing: -.035em; font-weight: 700; }
-.dh-meta { font-size: 13.5px; color: rgba(255,255,255,.62); }
-.dh-meta b { color: #fdba74; font-weight: 600; }
-.dh-price { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-top: 22px; }
-.dh-label { font-size: 13px; font-weight: 550; color: rgba(255,255,255,.62); }
-.dh-big { font-size: 52px; font-weight: 750; letter-spacing: -.045em; line-height: 1; margin-top: 4px; }
-.dh-tags { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; padding-bottom: 6px; }
-.dh-vs { font-size: 12.5px; font-weight: 650; padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,.1); color: rgba(255,255,255,.85); white-space: nowrap; }
-.dh-vs.below { background: rgba(24,195,126,.18); color: #6ee7b7; }
-.dh-vs.above { background: rgba(251,146,60,.18); color: #fdba74; }
-.dhero .badge.good { background: rgba(24,195,126,.18); color: #6ee7b7; }
-.dh-trip { display: flex; align-items: center; gap: 12px; width: 100%; margin-top: 16px; padding: 12px 14px; border-radius: 16px; text-align: left; color: #fff;
-           background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.1); transition: background .15s, transform .1s; }
-.dh-trip:hover { background: rgba(255,255,255,.11); }
+/* Route header: one soft, light card (price first, verdict next to it, then the trip and two buttons). */
+.dhero { position: relative; padding: 22px 20px 20px; border-radius: 24px; background: var(--surface); color: var(--ink); }
+.dh-route { font-size: 12px; font-weight: 700; letter-spacing: .06em; color: var(--ink-3); }
+.dh-route i { font-style: normal; color: var(--deal); margin: 0 2px; }
+.dhero h1 { margin: 4px 0 2px; font-size: 28px; line-height: 1.15; letter-spacing: -.03em; font-weight: 750; }
+.dh-meta { font-size: 13.5px; color: var(--ink-3); }
+.dh-meta b { color: var(--off); font-weight: 600; }
+.dh-price { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-top: 20px; }
+.dh-label { font-size: 13px; font-weight: 550; color: var(--ink-2); }
+.dh-big { font-size: 46px; font-weight: 750; letter-spacing: -.04em; line-height: 1; margin-top: 6px; color: var(--ink); }
+.dh-big small { font-size: 22px; font-weight: 700; letter-spacing: -.02em; }
+.dh-tags { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; padding-bottom: 4px; }
+.dh-vs { font-size: 12.5px; font-weight: 600; color: var(--ink-3); white-space: nowrap; }
+.dh-trip { display: flex; align-items: center; gap: 12px; width: 100%; margin-top: 16px; padding: 12px 14px; border-radius: 16px; text-align: left; color: var(--ink);
+           background: var(--card); border: 1px solid var(--line); transition: border-color .15s, transform .1s; }
+.dh-trip:hover { border-color: var(--line-2); }
 .dh-trip:active { transform: scale(.99); }
 .dh-trip > span:not(.al) { flex: 1; min-width: 0; }
-.dh-trip b { display: block; font-size: 14.5px; font-weight: 600; }
-.dh-trip small { display: block; margin-top: 2px; font-size: 12.5px; color: rgba(255,255,255,.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dh-trip em { flex: none; display: inline-flex; align-items: center; gap: 2px; font-style: normal; font-size: 12.5px; font-weight: 600; color: #6ee7b7; }
+.dh-trip b { display: block; font-size: 14.5px; font-weight: 650; }
+.dh-trip small { display: block; margin-top: 2px; font-size: 12.5px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dh-trip em { flex: none; display: inline-flex; align-items: center; gap: 2px; font-style: normal; font-size: 13px; font-weight: 650; color: var(--deal); }
 .dh-trip em svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
-.dhero .al { color: hsl(var(--h) 80% 85%); background: hsl(var(--h) 45% 28%); }
-.dhero .meter { margin: 22px 0 8px; height: 6px; background: linear-gradient(90deg, #ff6b4a 0%, #18c37e 30%, rgba(24,195,126,.45) 50%, rgba(255,255,255,.18) 65%, rgba(255,255,255,.18) 100%); }
-.dhero .meter .mark { background: rgba(255,255,255,.5); }
-.dhero .meter .pin { background: #0d0f14; border-color: #fff; box-shadow: 0 0 0 4px rgba(255,255,255,.12); }
-.dhero .meter-legend { color: rgba(255,255,255,.5); }
-.dh-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; margin-top: 18px; }
-.btn.light { background: #ffffff; color: #0d0f14; border-color: #ffffff; }
-.btn.light:hover { box-shadow: 0 6px 18px rgba(0,0,0,.25); }
-.btn.glass { background: rgba(255,255,255,.1); color: #fff; border-color: transparent; }
-.btn.glass:hover { background: rgba(255,255,255,.16); }
-.dh-empty { display: grid; gap: 10px; justify-items: start; margin-top: 20px; padding: 16px; border-radius: 16px; background: rgba(255,255,255,.07); }
-.dh-empty span { font-size: 13.5px; color: rgba(255,255,255,.62); }
+.dhero .meter { margin: 20px 0 8px; height: 6px; background: linear-gradient(90deg, var(--deal) 0%, #8fd9a8 45%, var(--line-2) 62%, #f6c9a8 100%); }
+.dhero .meter .mark { background: var(--ink-3); }
+.dhero .meter .pin { background: var(--card); border-color: var(--ink); box-shadow: 0 2px 6px rgba(15,29,58,.18); }
+.dhero .meter-legend { color: var(--ink-3); }
+.dh-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 18px; }
+.btn.light { background: var(--deal); color: #fff; border-color: var(--deal); }
+.btn.light:hover { filter: brightness(.96); }
+.btn.glass { background: var(--card); color: var(--ink); border-color: var(--line-2); }
+.btn.glass:hover { background: var(--hover); }
+.dh-empty { display: grid; gap: 10px; justify-items: start; margin-top: 18px; padding: 16px; border-radius: 16px; background: var(--card); }
+.dh-empty span { font-size: 13.5px; color: var(--ink-2); }
 .d-print { margin: 10px 4px 0; font-size: 12px; color: var(--ink-3); text-align: center; }
 
 .tabs { position: sticky; top: calc(60px + var(--safe-t)); z-index: 10; display: flex; gap: 4px; padding: 4px; margin: 22px 0 14px;
@@ -596,27 +585,6 @@ input[type=date].input { -webkit-appearance: none; appearance: none; min-height:
   .dhero h1 { font-size: 36px; }
 }
 
-/* ---------- dark mode: follows the phone's setting ---------- */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0e1013; --surface: #1a1d22; --card: #15181c; --hover: #1b1e23;
-    --ink: #eef0f3; --ink-2: #b3b8c2; --ink-3: #7d828d; --on-ink: #0e1013;
-    --line: #23272d; --line-2: #2e333a;
-    --deal: #25c784; --deal-soft: #12291d; --great: #3ad393; --extreme: #ff6b4a; --extreme-soft: #3a1b14;
-    --shadow: none; --shadow-lg: 0 24px 64px rgba(0,0,0,.6);
-    color-scheme: dark;
-  }
-  .scrim { background: rgba(0,0,0,.55); }
-  .c-o { background: #1c3a2a; color: #8fe0b5; }
-  .c-h { background: #3a231a; color: #ffb08a; }
-  .tag.warn, .demo-note.warn { background: #3a2a12; color: #f3c26b; }
-  .demo-note.warn b { color: #ffd88f; }
-  .chg.up, .vs.above, .vs-mini.above, .btn.danger, .manage button.danger, .manage button.danger svg { color: #ff9a6b; stroke: currentColor; }
-  .dhero { box-shadow: 0 0 0 1px #23272d, 0 24px 60px -28px rgba(0,0,0,.8); }
-  .route:hover { box-shadow: 0 0 0 1px var(--line-2); }
-  .al { color: hsl(var(--h) 75% 82%); background: hsl(var(--h) 40% 22%); }
-  .spark path.l { stroke: var(--ink-2); }
-}
 .brand svg path { stroke: var(--bg); }.spark { color: var(--ink); }
 
 /* ---------- home sorting, trip extras ---------- */
@@ -674,3 +642,63 @@ input[type=date].input { -webkit-appearance: none; appearance: none; min-height:
 .badge.good, .badge.great { animation: badge-in .5s .25s var(--ease) both; }
 @keyframes badge-in { from { opacity: 0; transform: scale(.85); } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* =====================================================================
+   Light, calm, consistent (Oct 2026): white, deep navy text, one green,
+   soft grey-blue cards, hairline borders, no heavy shadows.
+   ===================================================================== */
+:root {
+  --bg: #ffffff; --surface: #f3f5f9; --card: #ffffff; --hover: #f8f9fc;
+  --ink: #0f1d3a; --ink-2: #4b5671; --ink-3: #8a93a8; --on-ink: #ffffff;
+  --line: #e8ebf1; --line-2: #dde1ea;
+  --deal: #16a34a; --deal-soft: #e7f6ec; --great: #15803d;
+  --extreme: #e5484d; --extreme-soft: #fdecec; --off: #d9480f;
+  --shadow: 0 1px 2px rgba(15,29,58,.04); --shadow-lg: 0 24px 64px rgba(15,29,58,.18);
+  color-scheme: light;
+}
+body { background: var(--bg); color: var(--ink); }
+.top { background: rgba(255,255,255,.88); }
+.hello h1 { font-size: 28px; letter-spacing: -.03em; }
+.hello p { color: var(--ink-3); }
+
+/* Route cards: white, hairline border, price on the right, one verdict pill */
+.route { border-radius: 20px; border: 1px solid var(--line); box-shadow: none; padding: 18px; }
+.route:hover { transform: none; box-shadow: none; border-color: var(--line-2); background: var(--hover); }
+.route-city { font-size: 18px; font-weight: 700; letter-spacing: -.02em; }
+.route-sub { font-size: 13px; color: var(--ink-3); font-weight: 500; }
+.route-meta { display: none; }
+.route-price .p { font-size: 24px; font-weight: 750; color: var(--ink); }
+.route-price .n { font-size: 12px; color: var(--ink-3); }
+.route-trip { background: var(--surface); border-radius: 12px; color: var(--ink-2); }
+.route-foot { margin-top: 12px; }
+.spark path.l { stroke: var(--ink-3); }
+
+/* Verdict pills: the same five everywhere */
+.badge { font-size: 12px; font-weight: 650; padding: 4px 10px 4px 9px; border-radius: 99px; }
+.badge.good { background: var(--deal-soft); color: var(--great); }
+.badge.great { background: var(--deal); color: #fff; }
+.badge.extreme { background: var(--extreme); color: #fff; }
+.badge.normal { background: var(--surface); color: var(--ink-2); }
+.badge.high { background: #fff1e8; color: var(--off); }
+.badge.normal::before { background: var(--ink-3); }
+
+/* Sections and panels: flat, hairline */
+.panel, .tile, .fares, .manage, .summary, .chart-box { box-shadow: none; border-color: var(--line); }
+.summary { background: var(--card); }
+.tabs { background: var(--surface); }
+.tabs button.on { box-shadow: 0 1px 2px rgba(15,29,58,.08); }
+.pill.on, .ac.on, .chip.on { background: var(--ink); border-color: var(--ink); }
+.btn.primary { background: var(--ink); border-color: var(--ink); }
+.btn.deal { background: var(--deal); border-color: var(--deal); }
+.fab { background: var(--deal); border-color: var(--deal); box-shadow: 0 10px 28px rgba(22,163,74,.32); }
+.live i { background: var(--deal); }
+.sortbar { margin-bottom: 16px; }
+.d-print { margin-top: 14px; }
+.badge.extreme { background: #0f6b31; color: #fff; }
+.badge.extreme::after { display: none; }
+.dh-big .pp { font-size: 14px; font-weight: 600; letter-spacing: 0; color: var(--ink-3); margin-left: 4px; }
+.dh-big { display: flex; align-items: baseline; flex-wrap: wrap; }
+.c-g { background: var(--deal); color: #fff; }
+.c-o { background: var(--deal-soft); color: var(--great); }
+.c-n { background: var(--surface); color: var(--ink); }
+.c-h { background: #fff4ec; color: #b4531c; }

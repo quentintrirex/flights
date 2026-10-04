@@ -67,7 +67,7 @@ $w = watch(1);
 $r = scan_watch($w);
 $w = watch(1);
 check('first scan finds fares', $r['ok'] && $r['fares'] > 20, json_encode($r));
-check('day one: still learning the usual lowest fare (no deal levels yet)', $w['normal_price'] === null && level_for((int) $w['low_price'], null) === 'none');
+check('day one: verdict against a typical cheap fare among the dates (25th percentile)', $w['normal_price'] > 0 && $w['normal_price'] >= $w['low_price']);
 check('first scan raises no alert (baseline)', $r['alert'] === null && (int) q('SELECT COUNT(*) FROM alerts')->fetchColumn() === 0);
 $bad = q('SELECT COUNT(*) FROM fares WHERE stops>1 OR nights<7 OR nights>21 OR depart<?', ['2026-10-03'])->fetchColumn();
 check('filters: stops, nights, past dates', (int) $bad === 0);
