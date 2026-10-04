@@ -487,3 +487,109 @@ input[type=date].input { -webkit-appearance: none; appearance: none; min-height:
 .vs-mini.below { color: var(--deal); }
 .vs-mini.above { color: #c2410c; }
 .detail-head .route-sub { white-space: normal; overflow: visible; }
+
+/* ---------- route page v2: dark hero card, tabs, clean manage list ---------- */
+.d-top { display: flex; align-items: center; justify-content: space-between; margin: 6px 0 8px; }
+.d-top .back { margin: 8px 0; }
+.pill-btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 13px; border: 1px solid var(--line-2); border-radius: 999px; background: #fff;
+            font-size: 14px; font-weight: 600; color: var(--ink-2); transition: background .15s, transform .1s; }
+.pill-btn:hover { background: var(--surface); }
+.pill-btn:active { transform: scale(.96); }
+.pill-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.dhero {
+  position: relative; overflow: hidden; padding: 22px 20px 20px; border-radius: 26px; color: #fff; isolation: isolate;
+  background: radial-gradient(120% 80% at 100% 0%, rgba(24,195,126,.32) 0%, rgba(24,195,126,0) 55%), linear-gradient(165deg, #1a1f2b 0%, #0d0f14 70%);
+  box-shadow: 0 24px 60px -28px rgba(13,15,20,.6);
+}
+/* A dotted flight arc in the corner */
+.dhero::after {
+  content: ""; position: absolute; z-index: -1; top: 14px; right: -10px; width: 220px; height: 110px; opacity: .35;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 220 110'%3E%3Cpath d='M10 100 C 60 10, 160 0, 210 60' fill='none' stroke='%23fff' stroke-width='2' stroke-dasharray='1 7' stroke-linecap='round'/%3E%3Ccircle cx='210' cy='60' r='4' fill='%2318c37e'/%3E%3C/svg%3E") no-repeat center / contain;
+}
+.dh-route { font-size: 12px; font-weight: 700; letter-spacing: .08em; color: rgba(255,255,255,.55); }
+.dh-route i { font-style: normal; color: #18c37e; margin: 0 2px; }
+.dhero h1 { margin: 6px 0 4px; font-size: 30px; line-height: 1.1; letter-spacing: -.035em; font-weight: 700; }
+.dh-meta { font-size: 13.5px; color: rgba(255,255,255,.62); }
+.dh-meta b { color: #fdba74; font-weight: 600; }
+.dh-price { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-top: 22px; }
+.dh-label { font-size: 13px; font-weight: 550; color: rgba(255,255,255,.62); }
+.dh-big { font-size: 52px; font-weight: 750; letter-spacing: -.045em; line-height: 1; margin-top: 4px; }
+.dh-tags { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; padding-bottom: 6px; }
+.dh-vs { font-size: 12.5px; font-weight: 650; padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,.1); color: rgba(255,255,255,.85); white-space: nowrap; }
+.dh-vs.below { background: rgba(24,195,126,.18); color: #6ee7b7; }
+.dh-vs.above { background: rgba(251,146,60,.18); color: #fdba74; }
+.dhero .badge.good { background: rgba(24,195,126,.18); color: #6ee7b7; }
+.dh-trip { display: flex; align-items: center; gap: 12px; width: 100%; margin-top: 16px; padding: 12px 14px; border-radius: 16px; text-align: left; color: #fff;
+           background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.1); transition: background .15s, transform .1s; }
+.dh-trip:hover { background: rgba(255,255,255,.11); }
+.dh-trip:active { transform: scale(.99); }
+.dh-trip > span:not(.al) { flex: 1; min-width: 0; }
+.dh-trip b { display: block; font-size: 14.5px; font-weight: 600; }
+.dh-trip small { display: block; margin-top: 2px; font-size: 12.5px; color: rgba(255,255,255,.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dh-trip em { flex: none; display: inline-flex; align-items: center; gap: 2px; font-style: normal; font-size: 12.5px; font-weight: 600; color: #6ee7b7; }
+.dh-trip em svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.dhero .al { color: hsl(var(--h) 80% 85%); background: hsl(var(--h) 45% 28%); }
+.dhero .meter { margin: 22px 0 8px; height: 6px; background: linear-gradient(90deg, #ff6b4a 0%, #18c37e 30%, rgba(24,195,126,.45) 50%, rgba(255,255,255,.18) 65%, rgba(255,255,255,.18) 100%); }
+.dhero .meter .mark { background: rgba(255,255,255,.5); }
+.dhero .meter .pin { background: #0d0f14; border-color: #fff; box-shadow: 0 0 0 4px rgba(255,255,255,.12); }
+.dhero .meter-legend { color: rgba(255,255,255,.5); }
+.dh-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; margin-top: 18px; }
+.btn.light { background: #fff; color: var(--ink); border-color: #fff; }
+.btn.light:hover { box-shadow: 0 6px 18px rgba(0,0,0,.25); }
+.btn.glass { background: rgba(255,255,255,.1); color: #fff; border-color: transparent; }
+.btn.glass:hover { background: rgba(255,255,255,.16); }
+.dh-empty { display: grid; gap: 10px; justify-items: start; margin-top: 20px; padding: 16px; border-radius: 16px; background: rgba(255,255,255,.07); }
+.dh-empty span { font-size: 13.5px; color: rgba(255,255,255,.62); }
+.d-print { margin: 10px 4px 0; font-size: 12px; color: var(--ink-3); text-align: center; }
+
+.tabs { position: sticky; top: calc(60px + var(--safe-t)); z-index: 10; display: flex; gap: 4px; padding: 4px; margin: 22px 0 14px;
+        background: rgba(247,247,248,.92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-radius: 14px; }
+.tabs button { flex: 1; height: 38px; border: 0; border-radius: 10px; background: transparent; font-size: 14px; font-weight: 600; color: var(--ink-2); transition: background .2s, color .2s, box-shadow .2s; }
+.tabs button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.tabp { animation: fade .3s ease both; }
+.tabp .tiles { margin-top: 0; }
+.tabp > .section-title:first-child { margin-top: 4px; }
+
+.manage { border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: #fff; }
+.manage button { display: flex; align-items: center; gap: 12px; width: 100%; height: 52px; padding: 0 16px; border: 0; border-top: 1px solid var(--line);
+                 background: #fff; text-align: left; font-size: 15px; font-weight: 550; transition: background .15s; }
+.manage button:first-child { border-top: 0; }
+.manage button:hover { background: #fcfcfd; }
+.manage button:active { background: var(--surface); }
+.manage button svg { width: 18px; height: 18px; flex: none; fill: none; stroke: var(--ink-3); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.manage button.danger, .manage button.danger svg { color: #c2410c; stroke: #c2410c; }
+.manage .spin { width: 18px; height: 18px; }
+.air { margin-top: 22px; }
+
+/* ---------- airline picker (route settings) ---------- */
+#air-mode + .hint { margin-top: 8px; }
+.al-box { margin-top: 10px; border: 1px solid var(--line-2); border-radius: 16px; overflow: hidden; animation: enter .3s var(--ease) both; }
+.al-search { height: 44px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; font-size: 15px; }
+.al-search:focus { box-shadow: none; border-color: var(--line); background: #fcfcfd; }
+.al-list { max-height: 320px; overflow-y: auto; overscroll-behavior: contain; }
+.al-sec { position: sticky; top: 0; z-index: 1; display: flex; align-items: baseline; gap: 8px; padding: 10px 14px 6px; background: rgba(255,255,255,.95);
+          font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.al-sec span { font-weight: 500; letter-spacing: 0; text-transform: none; }
+.al-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 8px 14px; border: 0; border-top: 1px solid var(--line);
+          background: #fff; text-align: left; font-size: 15px; transition: background .12s; }
+.al-sec + .al-row { border-top: 0; }
+.al-row:hover { background: #fcfcfd; }
+.al-row:active { background: var(--surface); }
+.al-row .ck { flex: none; width: 22px; height: 22px; border-radius: 7px; border: 1.5px solid var(--line-2); display: grid; place-items: center; transition: background .15s, border-color .15s; }
+.al-row.on .ck { background: var(--ink); border-color: var(--ink); }
+.al-row.on .ck::after { content: ""; width: 10px; height: 6px; margin-top: -2px; border: solid #fff; border-width: 0 0 2px 2px; transform: rotate(-45deg); }
+.al-row .n { flex: 1; min-width: 0; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.al-row .pr { flex: none; text-align: right; line-height: 1.2; }
+.al-row .pr b { display: block; font-size: 14px; font-weight: 700; }
+.al-row .pr small { font-size: 11.5px; color: var(--ink-3); }
+.al-row .al { min-width: 30px; height: 22px; font-size: 10.5px; }
+.al-msg { margin: 0; padding: 18px 14px; font-size: 14px; color: var(--ink-3); text-align: center; }
+.al-load { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 14px; font-size: 14px; color: var(--ink-2); }
+.al-skel { height: 52px; border-top: 1px solid var(--line); background: linear-gradient(90deg, #fff 0%, var(--surface) 40%, #fff 80%) 0 0 / 200% 100%; animation: skel 1.2s linear infinite; }
+@keyframes skel { to { background-position: -200% 0; } }
+@media (min-width: 700px) {
+  .tabp .cal-head, .tabp .cal { max-width: none; gap: 6px; }
+  .dhero { padding: 28px 28px 24px; }
+  .dhero h1 { font-size: 36px; }
+}

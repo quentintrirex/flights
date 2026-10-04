@@ -264,6 +264,14 @@ try {
             $n = push_all(['title' => 'Notifications are on', 'body' => 'You will hear from me when a fare gets really cheap.', 'url' => './', 'tag' => 'test']);
             out(['sent' => $n]);
 
+        case 'airlines':
+            // Which airlines fly this route (for the airline picker), before the route is saved.
+            $origins = array_values(array_unique(array_filter(explode(',', strtoupper((string) ($_GET['origins'] ?? ''))), fn($o) => preg_match('/^[A-Z]{3}$/', $o))));
+            $kind = ($_GET['kind'] ?? 'city') === 'country' ? 'country' : 'city';
+            $dest = strtoupper((string) ($_GET['dest'] ?? ''));
+            if (!$origins || !preg_match($kind === 'country' ? '/^[A-Z]{2}$/' : '/^[A-Z]{3}$/', $dest)) out(['airlines' => []]);
+            out(['airlines' => route_airlines($origins, $kind, $dest, ($_GET['trip'] ?? 'return') !== 'oneway', max(-1, min(2, (int) ($_GET['stops'] ?? 1))))]);
+
         case 'places':
             // Destination search: built-in list first, then Aviasales' public autocomplete (no token needed).
             $term = mb_strtolower(trim(mb_substr((string) ($_GET['q'] ?? ''), 0, 40)));

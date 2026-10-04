@@ -42,6 +42,11 @@
     plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
     plane: '<svg viewBox="0 0 24 24"><path d="M10.5 13.5L3 11l1.5-1.5 8 1 4-4c1-1 2.6-1.2 3.2-.6s.4 2.2-.6 3.2l-4 4 1 8L14.5 22l-2.5-7.5"/></svg>',
     refresh: '<svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg>',
+    edit: '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>',
+    chev: '<svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>',
+    pause: '<svg viewBox="0 0 24 24"><path d="M9 5v14M15 5v14"/></svg>',
+    play: '<svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7V5z"/></svg>',
+    trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
     clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
     bed: '<svg viewBox="0 0 24 24"><path d="M3 18V7M3 14h18v4M21 14v-2a3 3 0 0 0-3-3h-7v5"/><circle cx="7" cy="11" r="2"/></svg>',
   };
@@ -340,73 +345,91 @@
       ['Last 7 days', st.week !== null ? `${st.week > 0 ? '+' : ''}${st.week}%` : '–', st.week !== null ? (st.week < 0 ? 'getting cheaper' : st.week > 0 ? 'getting pricier' : 'steady') : `${st.days} ${st.days === 1 ? 'day' : 'days'} of history`],
     ];
 
+    let tab = 'dates';
+    try { tab = sessionStorage.getItem('fl-tab') || 'dates'; } catch { /* private mode */ }
+    if (best) fareCache.set(String(best.id), best);
+    const meta = [w.trip === 'return' ? `Return · ${w.minNights}–${w.maxNights} nights` : 'One way', windowLabel(w),
+      w.maxStops < 0 ? 'any stops' : w.maxStops === 0 ? 'direct only' : 'max 1 stop'].join(' · ');
+    const vsCls = ratio ? (ratio < 0.97 ? 'below' : ratio > 1.03 ? 'above' : '') : '';
+    const vsTxt = ratio ? (ratio < 0.97 ? `${Math.round((1 - ratio) * 100)}% below normal` : ratio > 1.03 ? `${Math.round((ratio - 1) * 100)}% above normal` : 'About the normal price') : '';
+    const insights = [country ? bars(data.byCity, 'Cheapest per city') : '',
+      bars(data.byOrigin, 'Cheapest per departure airport', (r) => `${esc(originName(r.key))} <small>${esc(r.key)}</small>`),
+      bars(data.byWeekday, 'Cheapest day of the week to leave'), bars(data.byStops, 'Direct or with stops')].join('');
+    const panel = (k) => `class="tabp" data-panel="${k}"${tab === k ? '' : ' hidden'}`;
+
     view.innerHTML = `
-      <button class="back" data-back>${ICON.back} Routes</button>
-      <div class="detail-head enter">
-        <h1>${esc(placeTitle(w))}</h1>
-        <div class="route-sub">${w.origins.map(originName).join(', ')} → ${country ? esc(w.cities.join(', ')) : `${esc(w.city)} (${w.dest})`}</div>
-        <div class="chips-row">
-          <span class="tag">${w.trip === 'return' ? 'Return' : 'One way'}</span>${w.trip === 'return' ? `<span class="tag">${w.minNights}–${w.maxNights} nights</span>` : ''}
-          <span class="tag">${esc(windowLabel(w))}</span><span class="tag">${w.maxStops < 0 ? 'Any stops' : w.maxStops === 0 ? 'Direct only' : 'Max 1 stop'}</span>
-          <span class="tag">Alerts: ${{ extreme: 'extreme only', great: 'great +', good: 'every deal' }[w.alert]}${w.maxPrice ? ` or below ${eur(w.maxPrice)}` : ''}</span>
-          ${w.airlines.length ? `<span class="tag">Only ${esc(w.airlines.map(airlineName).join(', '))}</span>` : ''}
-          ${w.paused ? '<span class="tag warn">Paused</span>' : ''}
-        </div>
+      <div class="d-top">
+        <button class="back" data-back>${ICON.back} Routes</button>
+        <button class="pill-btn" data-edit="${w.id}">${ICON.edit} Edit</button>
       </div>
 
-      <div class="hero enter enter-2">
+      <section class="dhero enter">
+        <div class="dh-route">${w.origins.map(esc).join(' · ')} <i>→</i> ${esc(country ? w.city : w.dest)}</div>
+        <h1>${esc(placeTitle(w))}</h1>
+        <div class="dh-meta">${esc(meta)}${w.airlines.length ? ` · only ${esc(w.airlines.map(airlineName).join(', '))}` : ''}${w.paused ? ' · <b>paused</b>' : ''}</div>
         ${best ? `
-          <div class="label">Cheapest right now${country && best.destName ? ` · ${esc(best.destName)}` : ''}${air.codes.length ? ` · ${esc(air.codes.map(airlineName).join(', '))}` : ''}</div>
-          <div class="big num">${eur(best.price)}</div>
-          ${ratio ? `<div class="vs ${ratio < 0.97 ? 'below' : ratio > 1.03 ? 'above' : ''}">${ratio < 0.97 ? `${Math.round((1 - ratio) * 100)}% below normal` : ratio > 1.03 ? `${Math.round((ratio - 1) * 100)}% above normal` : 'About the normal price'}</div>` : ''}
-          <div class="hero-sub">${weekday(best.depart)} ${day(best.depart)}${best.ret ? ` – ${day(best.ret)} · ${best.nights} nights` : ''} · ${stops(best.stops)}${best.airlineName ? ' · ' + esc(best.airlineName) : ''} &nbsp;${badge(best.level)}</div>
-          ${w.normal ? `<div class="meter"><div class="mark" style="left:${normalPos}%"></div><div class="pin" style="left:${normalPos}%" data-pin="${pinPos}"></div></div>
-          <div class="meter-legend"><span>Steal</span><span>Normal ${eur(w.normal)}</span><span>Pricey</span></div>` : ''}
-          <div class="hero-actions">
-            ${safeUrl(best.book) ? `<a class="btn deal" href="${esc(best.book)}" target="_blank" rel="noopener noreferrer">Book this fare</a>` : ''}
-            <a class="btn" href="${esc(safeUrl(best.google))}" target="_blank" rel="noopener noreferrer">Google Flights</a>
-          </div>`
+        <div class="dh-price">
+          <div>
+            <div class="dh-label">Cheapest now${air.codes.length ? ` · ${esc(air.codes.map(airlineName).join(', '))}` : ''}</div>
+            <div class="dh-big num">${eur(best.price)}</div>
+          </div>
+          <div class="dh-tags">${ratio ? `<span class="dh-vs ${vsCls}">${vsTxt}</span>` : ''}${badge(best.level)}</div>
+        </div>
+        <button class="dh-trip" data-fare="${+best.id}">
+          ${airMark(best.airline)}
+          <span><b>${weekday(best.depart)} ${day(best.depart)}${best.ret ? ` – ${weekday(best.ret)} ${day(best.ret)}` : ''}</b>
+          <small>${best.depTime ? `${esc(best.depTime)} · ` : ''}${best.airlineName ? esc(best.airlineName) + ' · ' : ''}${stops(best.stops)}${best.ret ? ` · ${best.nights} nights` : ''}${country && best.destName ? ` · ${esc(best.destName)}` : ''}</small></span>
+          <em>Trip details ${ICON.chev}</em>
+        </button>
+        ${w.normal ? `<div class="meter"><div class="mark" style="left:${normalPos}%"></div><div class="pin" style="left:${normalPos}%" data-pin="${pinPos}"></div></div>
+        <div class="meter-legend"><span>Steal</span><span>Normal ${eur(w.normal)}</span><span>Pricey</span></div>` : ''}
+        <div class="dh-actions">
+          ${safeUrl(best.book) ? `<a class="btn light" href="${esc(best.book)}" target="_blank" rel="noopener noreferrer">Book this fare</a>` : ''}
+          <a class="btn glass" href="${esc(safeUrl(best.google))}" target="_blank" rel="noopener noreferrer">Google Flights</a>
+        </div>`
         : air.codes.length
-          ? `<div class="label">No fares from ${esc(air.codes.map(airlineName).join(', '))} right now</div><p class="muted"><button class="link" data-air="">Show all airlines</button></p>`
-          : `<div class="label">${w.error ? esc(w.error) : 'No fares match right now'}</div><p class="muted">Try more nights, more airports, a longer window or allow stops${w.airlines.length ? ', or more airlines' : ''}.</p>`}
-      </div>
-      <p class="muted small-print enter enter-3">Checked ${ago(w.scannedAt)} · ${data.total} matching fares · prices Aviasales users found in the last few days. Always confirm the price before you book.</p>
+          ? `<div class="dh-empty"><b>No fares from ${esc(air.codes.map(airlineName).join(', '))} right now</b><button class="btn glass small" data-air="">Show all airlines</button></div>`
+          : `<div class="dh-empty"><b>${w.error ? esc(w.error) : 'No fares match right now'}</b><span>Try more nights, more airports, a longer window or allow stops${w.airlines.length ? ', or more airlines' : ''}.</span></div>`}
+      </section>
+      <p class="d-print">Checked ${ago(w.scannedAt)} · ${data.total} matching fares · found by Aviasales users in the last few days</p>
 
       ${airChips(data)}
 
-      <div class="tiles enter">${tiles.map(([l, v, s]) => `<div class="tile"><div class="tl">${l}</div><div class="tv num">${v}</div><div class="ts">${s}</div></div>`).join('')}</div>
+      <div class="tabs" role="tablist">${[['dates', 'Dates'], ['trend', 'Price trend'], ['insights', 'Insights']]
+        .map(([k, l]) => `<button role="tab" data-tab="${k}" class="${tab === k ? 'on' : ''}" aria-selected="${tab === k}">${l}</button>`).join('')}</div>
 
-      <div class="panel enter">
-        <div class="panel-t">Price history <div class="seg mini" data-range>${[[30, '30 d'], [90, '90 d'], ['all', 'All']].map(([v, l]) => `<button data-v="${v}" class="${String(v) === String(range) ? 'on' : ''}">${l}</button>`).join('')}</div></div>
-        <div id="chart-box">${chart(data.history, range)}</div>
+      <div ${panel('dates')}>
+        ${months.length ? `<div class="panel">
+          <div class="panel-t">When to fly <span class="muted">tap a day</span></div>
+          <div class="months">${months.map((m, i) => `<button class="m${m === bestMonth ? ' on' : ''}" data-month="${m}"><div class="bar${m === bestMonth ? ' best' : ''}" style="height:${14 + ((byMonth[m] - mMin) / (mMax - mMin || 1)) * 42}px;animation-delay:${i * 40}ms"></div><span>${MONTHS[+m.slice(5) - 1]}</span><em class="num">${eur(byMonth[m])}</em></button>`).join('')}</div>
+          <div class="cal-title" id="cal-title">${MONTHS_LONG[+bestMonth.slice(5) - 1]} ${bestMonth.slice(0, 4)}</div>
+          <div id="cal-box">${calendar(data.calendar, w.normal, bestMonth, w.from, w.to)}</div>
+          <div class="cal-legend"><span class="c-x">Steal</span><span class="c-g">Great</span><span class="c-o">Good</span><span class="c-n">Normal</span><span class="c-h">Pricey</span></div>
+        </div>` : ''}
+        <div class="section-title" id="fares-title">Best dates</div>
+        <div class="fares" id="fares">${fares.length ? fares.slice(0, 8).map((f) => fareRow(f, country)).join('') : '<p class="muted pad">No fares yet.</p>'}</div>
+        ${fares.length > 8 ? `<button class="btn ghost block more" data-more>Show ${fares.length - 8} more dates</button>` : ''}
       </div>
 
-      ${months.length ? `<div class="panel enter">
-        <div class="panel-t">When to fly <span class="muted">tap a day</span></div>
-        <div class="months">${months.map((m, i) => `<button class="m${m === bestMonth ? ' on' : ''}" data-month="${m}"><div class="bar${m === bestMonth ? ' best' : ''}" style="height:${14 + ((byMonth[m] - mMin) / (mMax - mMin || 1)) * 42}px;animation-delay:${i * 40}ms"></div><span>${MONTHS[+m.slice(5) - 1]}</span><em class="num">${eur(byMonth[m])}</em></button>`).join('')}</div>
-        <div class="cal-title" id="cal-title">${MONTHS_LONG[+bestMonth.slice(5) - 1]} ${bestMonth.slice(0, 4)}</div>
-        <div id="cal-box">${calendar(data.calendar, w.normal, bestMonth, w.from, w.to)}</div>
-        <div class="cal-legend"><span class="c-x">Steal</span><span class="c-g">Great</span><span class="c-o">Good</span><span class="c-n">Normal</span><span class="c-h">Pricey</span></div>
-      </div>` : ''}
-
-      <div class="section-title" id="fares-title">Best dates</div>
-      <div class="fares enter" id="fares">${fares.length ? fares.slice(0, 8).map((f) => fareRow(f, country)).join('') : '<p class="muted pad">No fares yet.</p>'}</div>
-      ${fares.length > 8 ? `<button class="btn ghost block more" data-more>Show ${fares.length - 8} more dates</button>` : ''}
-
-      <div class="grid2">
-        ${country ? bars(data.byCity, 'Cheapest per city') : ''}
-        ${bars(data.byOrigin, 'Cheapest per departure airport', (r) => `${esc(originName(r.key))} <small>${esc(r.key)}</small>`)}
-        ${bars(data.byWeekday, 'Cheapest day of the week to leave')}
-        ${bars(data.byStops, 'Direct or with stops')}
+      <div ${panel('trend')}>
+        <div class="tiles">${tiles.map(([l, v, s]) => `<div class="tile"><div class="tl">${l}</div><div class="tv num">${v}</div><div class="ts">${s}</div></div>`).join('')}</div>
+        <div class="panel">
+          <div class="panel-t">Price history <div class="seg mini" data-range>${[[30, '30 d'], [90, '90 d'], ['all', 'All']].map(([v, l]) => `<button data-v="${v}" class="${String(v) === String(range) ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+          <div id="chart-box">${chart(data.history, range)}</div>
+        </div>
       </div>
 
-      ${data.alerts.length ? `<div class="section-title">Alerts for this route</div><div class="panel">${data.alerts.map((a) => `<div class="mini-alert"><b>${esc(a.title)}</b><span>${ago(a.at)}</span></div>`).join('')}</div>` : ''}
+      <div ${panel('insights')}>
+        ${insights ? `<div class="grid2">${insights}</div>` : '<div class="chart-empty">More insights appear once there are fares from a few dates and airports.</div>'}
+        ${data.alerts.length ? `<div class="section-title">Alerts for this route</div><div class="panel">${data.alerts.map((a) => `<div class="mini-alert"><b>${esc(a.title)}</b><span>${ago(a.at)}</span></div>`).join('')}</div>` : ''}
+      </div>
 
-      <div class="settings-row">
-        <button class="btn small ghost" data-scan="${w.id}">${ICON.refresh} Check now</button>
-        <button class="btn small ghost" data-edit="${w.id}">Edit</button>
-        <button class="btn small ghost" data-pause="${w.id}" data-paused="${w.paused ? 1 : 0}">${w.paused ? 'Resume' : 'Pause'}</button>
-        <button class="btn small ghost danger" data-delete="${w.id}">Delete</button>
+      <div class="section-title">Route</div>
+      <div class="manage">
+        <button data-scan="${w.id}">${ICON.refresh}<span>Check prices now</span></button>
+        <button data-edit="${w.id}">${ICON.edit}<span>Edit route</span></button>
+        <button data-pause="${w.id}" data-paused="${w.paused ? 1 : 0}">${w.paused ? ICON.play : ICON.pause}<span>${w.paused ? 'Resume alerts' : 'Pause alerts'}</span></button>
+        <button class="danger" data-delete="${w.id}">${ICON.trash}<span>Delete route</span></button>
       </div>`;
     requestAnimationFrame(() => setTimeout(() => { const p = $('[data-pin]'); if (p) p.style.left = p.dataset.pin + '%'; }, 120));
     bindChart(view);
@@ -461,9 +484,6 @@
     const today = new Date().toISOString().slice(0, 10);
     const f = w ? { ...w } : { kind: 'city', origins: ['AMS', 'EIN', 'RTM'], dest: '', city: '', country: '', trip: 'return', months: 3, dateFrom: null, dateTo: null, minNights: 7, maxNights: 21, maxStops: 1, alert: 'great', maxPrice: null, airlines: [] };
     f.airlines = [...(f.airlines || [])];
-    // Airlines to offer as chips: the chosen ones, the ones seen on this route, then a few common ones.
-    const seen = w && routeData && routeData.watch.id === w.id ? (routeData.airlines || []).map((a) => a.key) : [];
-    let airOffer = [...new Set([...f.airlines, ...seen.slice(0, 8), 'KL', 'HV', 'TK', 'EK', 'QR', 'EY', 'LH', 'AF'])].slice(0, 14);
     let when = f.dateFrom ? 'custom' : String(f.months);
     const seg = (name, opts, val) => `<div class="seg" data-seg="${name}">${opts.map(([v, l]) => `<button type="button" data-v="${v}" class="${String(v) === String(val) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
     openSheet(`
@@ -480,9 +500,10 @@
           <label class="inl"><span>Latest</span><input class="input" type="date" id="dTo" min="${today}" value="${f.dateTo || ''}"></label></div>
         <div class="hint" id="when-hint">${when === 'custom' ? 'Departure between these dates.' : 'Departure any day from today until then.'}</div></div>
       <div class="field"><span class="lbl">Stops</span>${seg('maxStops', [[0, 'Direct'], [1, 'Max 1'], [-1, 'Any']], f.maxStops)}</div>
-      <div class="field"><span class="lbl">Airlines</span><div class="chips" id="airl"></div>
-        <div class="air-add"><input class="input" id="air-q" placeholder="Add another airline…" autocomplete="off"><div class="suggest" hidden></div></div>
-        <div class="hint" id="air-hint"></div></div>
+      <div class="field"><span class="lbl">Airlines</span>
+        <div class="seg" id="air-mode"><button type="button" data-m="any">Any airline</button><button type="button" data-m="pick">Choose airlines</button></div>
+        <div class="hint" id="air-hint"></div>
+        <div class="al-box" id="al-box" hidden><input class="input al-search" id="air-q" placeholder="Search airlines" autocomplete="off"><div class="al-list" id="al-list"></div></div></div>
       <div class="field"><span class="lbl">Notify me about</span>${seg('alert', [['extreme', 'Only extreme'], ['great', 'Great +'], ['good', 'Every deal']], f.alert)}
         <div class="hint">Extreme = 45% or more under the normal price. Great = 30%. Good = 15%.</div>
         <input class="input" style="margin-top:10px" type="number" inputmode="numeric" id="maxPrice" placeholder="And always below € (optional), e.g. 450" value="${f.maxPrice || ''}"></div>
@@ -492,13 +513,13 @@
         if (f.dest) {
           const label = f.kind === 'country' ? `Anywhere in ${esc(f.city)}` : `${esc(f.city)} <span class="muted">${esc(f.dest)}${f.country ? ' · ' + esc(f.country) : ''}</span>`;
           destBox.innerHTML = `<div class="picked"><span>${label}</span><button type="button">Change</button></div>`;
-          $('button', destBox).onclick = () => { f.dest = ''; renderDest(); $('#dest', sheet).focus(); };
+          $('button', destBox).onclick = () => { f.dest = ''; renderDest(); loadAirlines(); $('#dest', sheet).focus(); };
           return;
         }
         destBox.innerHTML = `<input class="input" id="dest" placeholder="City, airport or country" autocomplete="off" autocapitalize="words"><div class="suggest" hidden></div>`;
         const input = $('#dest', destBox), box = $('.suggest', destBox);
         let timer;
-        const pick = (b) => { clearTimeout(timer); Object.assign(f, { kind: b.dataset.kind, dest: b.dataset.code, city: b.dataset.city, country: b.dataset.country }); renderDest(); };
+        const pick = (b) => { clearTimeout(timer); Object.assign(f, { kind: b.dataset.kind, dest: b.dataset.code, city: b.dataset.city, country: b.dataset.country }); renderDest(); loadAirlines(); };
         const show = (list) => {
           box.hidden = !list.length;
           box.innerHTML = list.map((p) => `<button type="button" data-kind="${p.kind}" data-code="${esc(p.code)}" data-city="${esc(p.city)}" data-country="${esc(p.country)}">
@@ -525,45 +546,73 @@
       };
       renderDest();
 
-      // Airlines: none picked = any airline; otherwise only fares from the picked ones count.
-      const airBox = $('#airl', sheet), airHint = $('#air-hint', sheet);
+      // Airlines: "Any airline", or choose from the airlines that actually fly this route (cheapest first).
+      const airHint = $('#air-hint', sheet), alBox = $('#al-box', sheet), alList = $('#al-list', sheet), airQ = $('#air-q', sheet);
+      let mode = f.airlines.length ? 'pick' : 'any';
+      let onRoute = null;      // null = not loaded yet, else [{code, name, price, count}]
+      let loading = false, loadTimer, loadSeq = 0;
+      const row = (c, price, count) => `<button type="button" class="al-row${f.airlines.includes(c) ? ' on' : ''}" data-al="${esc(c)}" role="checkbox" aria-checked="${f.airlines.includes(c)}">
+          <i class="ck"></i>${airMark(c)}<span class="n">${esc(airlineName(c))}</span>${price ? `<span class="pr"><b class="num">${eur(price)}</b>${count ? `<small>${count} ${count > 1 ? 'fares' : 'fare'}</small>` : ''}</span>` : ''}</button>`;
       const renderAir = () => {
-        airBox.innerHTML = `<button type="button" class="chip${f.airlines.length ? '' : ' on'}" data-al="">Any airline</button>`
-          + airOffer.map((c) => `<button type="button" class="chip chip-al${f.airlines.includes(c) ? ' on' : ''}" data-al="${esc(c)}">${airMark(c)}${esc(airlineName(c))}</button>`).join('');
-        airHint.textContent = f.airlines.length
-          ? `Only ${f.airlines.map(airlineName).join(', ')}. Prices, the normal price and alerts all use just ${f.airlines.length > 1 ? 'these airlines' : 'this airline'}.`
-          : 'Every airline counts. Pick one or more to track only those.';
+        $$('#air-mode button', sheet).forEach((b) => b.classList.toggle('on', b.dataset.m === mode));
+        alBox.hidden = mode !== 'pick';
+        const n = onRoute ? onRoute.length : 0;
+        airHint.textContent = mode === 'any'
+          ? (!f.dest ? 'Every airline counts.' : loading ? 'Looking up which airlines fly here…' : n ? `${n} airlines fly this route. Every one counts.` : 'Every airline counts.')
+          : f.airlines.length ? `${f.airlines.length} selected. Prices, the normal price and alerts only use ${f.airlines.length > 1 ? 'these airlines' : 'this airline'}.` : 'Tick the airlines you want to fly with.';
+        if (mode !== 'pick') return;
+        const t = airQ.value.trim().toLowerCase();
+        const match = (c) => !t || airlineName(c).toLowerCase().includes(t) || c.toLowerCase() === t;
+        if (!f.dest) { alList.innerHTML = '<p class="al-msg">Pick where you’re going first. Then you’ll see every airline that flies there.</p>'; return; }
+        if (loading && !onRoute) { alList.innerHTML = '<div class="al-load"><span class="spin"></span>Finding airlines that fly here…</div>' + '<div class="al-skel"></div>'.repeat(4); return; }
+        const list = (onRoute || []).filter((a) => match(a.code));
+        const codes = new Set((onRoute || []).map((a) => a.code));
+        const extra = f.airlines.filter((c) => !codes.has(c) && match(c));
+        const others = t.length >= 2 ? Object.keys(window.AIRLINES || {}).filter((c) => !codes.has(c) && !f.airlines.includes(c) && match(c)).slice(0, 6) : [];
+        alList.innerHTML =
+          (list.length ? `<div class="al-sec">Fly this route <span>cheapest fare, next 2 months</span></div>${list.map((a) => row(a.code, a.price, a.count)).join('')}` : '')
+          + (extra.length ? `<div class="al-sec">Also chosen</div>${extra.map((c) => row(c)).join('')}` : '')
+          + (others.length ? `<div class="al-sec">Other airlines</div>${others.map((c) => row(c)).join('')}` : '')
+          + (!list.length && !extra.length && !others.length ? `<p class="al-msg">${t ? 'No airline with that name.' : 'No airline data for this route yet. Search to add one.'}</p>` : '');
       };
-      airBox.addEventListener('click', (e) => {
+      const loadAirlines = () => {
+        clearTimeout(loadTimer);
+        if (!f.dest || !f.origins.length) { onRoute = null; loading = false; renderAir(); return; }
+        loading = true;
+        renderAir();
+        loadTimer = setTimeout(async () => {
+          const seq = ++loadSeq;
+          try {
+            const r = await api('airlines', null, `&origins=${f.origins.join(',')}&kind=${f.kind}&dest=${encodeURIComponent(f.dest)}&trip=${f.trip}&stops=${f.maxStops}`);
+            if (seq === loadSeq) onRoute = r.airlines;
+          } catch { if (seq === loadSeq) onRoute = onRoute || []; }
+          if (seq === loadSeq) { loading = false; renderAir(); }
+        }, 350);
+      };
+      $('#air-mode', sheet).addEventListener('click', (e) => {
+        const b = e.target.closest('[data-m]');
+        if (!b) return;
+        mode = b.dataset.m;
+        if (mode === 'any') f.airlines = [];
+        renderAir();
+      });
+      alList.addEventListener('click', (e) => {
         const b = e.target.closest('[data-al]');
         if (!b) return;
         const c = b.dataset.al;
-        if (!c) f.airlines = [];
-        else if (f.airlines.includes(c)) f.airlines = f.airlines.filter((x) => x !== c);
+        if (f.airlines.includes(c)) f.airlines = f.airlines.filter((x) => x !== c);
         else if (f.airlines.length >= 12) return toast('At most 12 airlines');
         else f.airlines = [...f.airlines, c];
         renderAir();
       });
-      const airQ = $('#air-q', sheet), airSug = $('.air-add .suggest', sheet);
-      const addAir = (c) => {
-        if (!airOffer.includes(c)) airOffer = [...airOffer, c];
-        if (!f.airlines.includes(c) && f.airlines.length < 12) f.airlines = [...f.airlines, c];
-        airQ.value = ''; airSug.hidden = true; renderAir();
-      };
-      airQ.oninput = () => {
-        const t = airQ.value.trim().toLowerCase();
-        const hits = t.length < 2 ? [] : Object.entries(window.AIRLINES || {})
-          .filter(([c, n]) => n.toLowerCase().includes(t) || c.toLowerCase() === t).slice(0, 6);
-        airSug.hidden = !hits.length;
-        airSug.innerHTML = hits.map(([c, n]) => `<button type="button" data-add-al="${esc(c)}"><span>${airMark(c)} ${esc(n)}</span><span class="code">${esc(c)}</span></button>`).join('');
-      };
-      airSug.addEventListener('pointerdown', (e) => { const b = e.target.closest('[data-add-al]'); if (b) { e.preventDefault(); addAir(b.dataset.addAl); } });
-      airQ.onkeydown = (e) => { if (e.key === 'Enter') { const b = $('[data-add-al]', airSug); if (b) { e.preventDefault(); addAir(b.dataset.addAl); } } };
+      airQ.oninput = renderAir;
       renderAir();
+      loadAirlines();
 
       $$('[data-o]', sheet).forEach((b) => (b.onclick = () => {
         b.classList.toggle('on');
         f.origins = $$('[data-o].on', sheet).map((x) => x.dataset.o);
+        loadAirlines();
       }));
       $$('[data-w]', sheet).forEach((b) => (b.onclick = () => {
         when = b.dataset.w;
@@ -576,6 +625,7 @@
         const v = b.dataset.v;
         f[s.dataset.seg] = /^-?\d+$/.test(v) ? +v : v;
         if (s.dataset.seg === 'trip') $('#nights-field', sheet).hidden = v === 'oneway';
+        if (s.dataset.seg === 'trip' || s.dataset.seg === 'maxStops') loadAirlines();
       })));
       $('#save', sheet).onclick = async (e) => {
         if (!f.origins.length) return toast('Pick at least one airport to fly from');
@@ -677,8 +727,15 @@
   }
 
   document.addEventListener('click', async (e) => {
-    const t = e.target.closest('[data-more],[data-add],[data-edit],[data-scan],[data-pause],[data-delete],[data-fare],[data-back],[data-month],[data-day],[data-range] button,[data-allfares],[data-air]');
+    const t = e.target.closest('[data-more],[data-add],[data-edit],[data-scan],[data-pause],[data-delete],[data-fare],[data-back],[data-month],[data-day],[data-range] button,[data-allfares],[data-air],[data-tab]');
     if (!t) return;
+    if (t.matches('[data-tab]')) {
+      const k = t.dataset.tab;
+      try { sessionStorage.setItem('fl-tab', k); } catch { /* private mode */ }
+      $$('[data-tab]').forEach((b) => { b.classList.toggle('on', b === t); b.setAttribute('aria-selected', b === t); });
+      $$('[data-panel]').forEach((p) => { p.hidden = p.dataset.panel !== k; });
+      return;
+    }
     if (t.matches('[data-fare]')) {
       const f = fareCache.get(t.dataset.fare);
       if (f) tripSheet(f);
@@ -745,9 +802,10 @@
           location.hash = '#/';
           toast('Route deleted');
         } else {
+          const label = $('span', t) || t, was = label.textContent;
           t.dataset.sure = '1';
-          t.textContent = 'Tap again to delete';
-          setTimeout(() => { delete t.dataset.sure; t.textContent = 'Delete'; }, 3000);
+          label.textContent = 'Tap again to delete';
+          setTimeout(() => { delete t.dataset.sure; label.textContent = was; }, 3000);
         }
       }
     } catch (err) { toast(err.message); t.disabled = false; }

@@ -10,6 +10,8 @@ interface Provider
     public function fares(string $origin, string $dest, string $month, bool $return, bool $directOnly): array;
     /** Fares to anywhere in a country (ISO code, e.g. TH). */
     public function faresToCountry(string $origin, string $country, string $month, bool $return, bool $directOnly): array;
+    /** A quick sample of fares for every origin x destination x month, fetched together (used to list the airlines on a route). */
+    public function sample(array $origins, array $dests, array $months, bool $return, bool $directOnly): array;
 }
 
 /** Biggest built-in cities of a country, used when a provider cannot search a whole country at once. */
@@ -60,6 +62,41 @@ final class TravelpayoutsProvider implements Provider
         // Country without a built-in city list: one search to anywhere, keep this country's fares.
         $all = $this->query($this->params($origin, $month, $return, $directOnly));
         return array_values(array_filter($all, fn($f) => (city_info($f['city'])[1] ?? null) === $country));
+    }
+
+    public function sample(array $origins, array $dests, array $months, bool $return, bool $directOnly): array
+    {
+        $urls = [];
+        foreach ($origins as $o) foreach ($dests as $d) foreach ($months as $m) {
+            if ($o !== $d) $urls[] = self::BASE . '?' . http_build_query($this->params($o, $m, $return, $directOnly) + ['destination' => $d]);
+        }
+        // In parallel, a few at a time: this answers while the person waits.
+        $out = [];
+        foreach (array_chunk($urls, 6) as $chunk) {
+            $mh = curl_multi_init();
+            $hs = [];
+            foreach ($chunk as $url) {
+                $ch = curl_init($url);
+                curl_setopt_array($ch, [
+                    CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 12, CURLOPT_CONNECTTIMEOUT => 6, CURLOPT_ENCODING => '',
+                    CURLOPT_HTTPHEADER => ['X-Access-Token: ' . $this->token, 'Accept: application/json'],
+                ]);
+                curl_multi_add_handle($mh, $ch);
+                $hs[] = $ch;
+            }
+            do { $st = curl_multi_exec($mh, $running); if ($running) curl_multi_select($mh, 1.0); } while ($running && $st === CURLM_OK);
+            foreach ($hs as $ch) {
+                $json = json_decode((string) curl_multi_getcontent($ch), true);
+                foreach ((array) ($json['data'] ?? []) as $r) {
+                    $f = is_array($r) ? self::normalise($r, $this->marker) : null;
+                    if ($f) $out[] = $f;
+                }
+                curl_multi_remove_handle($mh, $ch);
+                curl_close($ch);
+            }
+            curl_multi_close($mh);
+        }
+        return $out;
     }
 
     private function query(array $params): array
@@ -149,6 +186,13 @@ final class DemoProvider implements Provider
     private const AIRLINES = ['KL', 'TK', 'EK', 'QR', 'EY', 'LH', 'CX', 'SQ', 'AF', 'LX'];
 
     public function name(): string { return 'Demo data'; }
+
+    public function sample(array $origins, array $dests, array $months, bool $return, bool $directOnly): array
+    {
+        $out = [];
+        foreach ($origins as $o) foreach ($dests as $d) foreach ($months as $m) array_push($out, ...$this->fares($o, $d, $m, $return, $directOnly));
+        return $out;
+    }
 
     public function faresToCountry(string $origin, string $country, string $month, bool $return, bool $directOnly): array
     {

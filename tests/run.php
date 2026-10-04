@@ -127,6 +127,10 @@ q("INSERT INTO watches(origins,dest,dest_city,trip,months,min_nights,max_nights,
 $r = scan_watch(watch(4));
 $al = q('SELECT DISTINCT airline FROM fares WHERE watch_id=4')->fetchAll(PDO::FETCH_COLUMN);
 check('route with airlines keeps only those', $r['ok'] && $al && !array_diff($al, ['KL', 'TK']), implode(',', $al));
+$list = route_airlines(['AMS', 'EIN'], 'city', 'BKK', true, 1, new DemoProvider());
+check('airlines on a route: cheapest first, with names and counts', count($list) >= 3 && $list[0]['price'] <= end($list)['price']
+    && $list[0]['name'] !== '' && $list[0]['count'] > 0, json_encode(array_slice($list, 0, 2)));
+check('airlines list is cached', route_airlines(['AMS', 'EIN'], 'city', 'BKK', true, 1, new DemoProvider()) === $list);
 check('fares store leg details', (int) q('SELECT COUNT(*) FROM fares WHERE watch_id=4 AND (dep_time IS NULL OR dur_out IS NULL OR flight_no IS NULL)')->fetchColumn() === 0);
 
 echo "Security helpers\n";

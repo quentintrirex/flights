@@ -268,6 +268,39 @@ function scan_watch(array $w, ?Provider $p = null): array
     return ['ok' => true, 'fares' => count($found), 'low' => $low, 'normal' => $normal, 'alert' => $alert];
 }
 
+/**
+ * Which airlines fly a route, cheapest first: [code, name, price, count]. A quick sample of the next
+ * two months from up to 4 departure airports (and 3 cities for a country). Cached for 6 hours.
+ */
+function route_airlines(array $origins, string $kind, string $dest, bool $return, int $maxStops, ?Provider $p = null): array
+{
+    $p ??= provider();
+    $origins = array_slice($origins, 0, 4);
+    $key = 'air:' . md5(json_encode([$p->name(), $origins, $kind, $dest, $return, $maxStops, today()]));
+    $hit = kv($key);
+    if ($hit !== null && ($c = json_decode($hit, true)) && $c['at'] > now() - 6 * 3600) return $c['list'];
+
+    $dests = $kind === 'country' ? country_cities($dest, 3) : [$dest];
+    $m0 = date('Y-m', now());
+    $months = [$m0, date('Y-m', strtotime("$m0-01 +1 month"))];
+    $seen = [];
+    foreach ($p->sample($origins, $dests, $months, $return, $maxStops === 0) as $f) {
+        if ($f['airline'] === '' || $f['depart'] < today() || ($maxStops >= 0 && $f['stops'] > $maxStops)) continue;
+        if ($return !== ($f['ret'] !== null)) continue;
+        $a = &$seen[$f['airline']];
+        $a ??= ['code' => $f['airline'], 'name' => airline_name($f['airline']), 'price' => PHP_INT_MAX, 'count' => 0];
+        $a['price'] = min($a['price'], $f['price']);
+        $a['count']++;
+        unset($a);
+    }
+    $list = array_values($seen);
+    usort($list, fn($a, $b) => $a['price'] <=> $b['price']);
+    kv($key, json_encode(['at' => now(), 'list' => $list]));
+    // Old cache rows: drop them now and then.
+    if (random_int(1, 20) === 1) q("DELETE FROM kv WHERE k LIKE 'air:%' AND k<>?", [$key]);
+    return $list;
+}
+
 /** Fares currently on offer (seen in the latest scan). */
 function live_fares(array $w, int $limit = 2000): array
 {
@@ -358,7 +391,7 @@ const AIRLINES = [
     'TB' => 'TUI fly Belgium', 'HO' => 'Juneyao Air', 'FM' => 'Shanghai Airlines', 'SC' => 'Shandong Airlines', 'MM' => 'Peach',
     'GK' => 'Jetstar Japan', '7C' => 'Jeju Air', 'TW' => "T'way Air", 'LJ' => 'Jin Air', 'IT' => 'Tigerair Taiwan', 'Z2' => 'AirAsia Philippines',
     'QZ' => 'Indonesia AirAsia', 'IX' => 'Air India Express', 'SG' => 'SpiceJet', 'QP' => 'Akasa Air', 'XY' => 'flynas', 'F3' => 'flyadeal',
-    'MK' => 'Air Mauritius', 'HM' => 'Air Seychelles', 'TC' => 'Air Tanzania', 'ER' => 'SereneAir', '8M' => 'Myanmar Airways', 'K6' => 'Cambodia Angkor Air',
+    'VF' => 'AJet', 'FH' => 'Freebird Airlines', 'EC' => 'easyJet Europe', 'DS' => 'easyJet Switzerland', 'MK' => 'Air Mauritius', 'HM' => 'Air Seychelles', 'TC' => 'Air Tanzania', 'ER' => 'SereneAir', '8M' => 'Myanmar Airways', 'K6' => 'Cambodia Angkor Air',
 ];
 
 function airline_name(?string $code): string { return $code ? (AIRLINES[$code] ?? $code) : ''; }
