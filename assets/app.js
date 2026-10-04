@@ -112,6 +112,61 @@
   }
 
   /** Until two earlier days of prices exist there is nothing to compare with: say so, with progress. */
+  /* ---------- personality: flags, destination colours, a little flight ---------- */
+  // Flag emoji where the device has them (iPhone, Mac, Android); Windows has none, so it gets a neat code badge.
+  const FLAGS_OK = (() => {
+    try {
+      const c = document.createElement('canvas'); c.width = c.height = 16;
+      const x = c.getContext('2d'); x.font = '14px sans-serif'; x.fillText('\u{1F1F3}\u{1F1F1}', 0, 14);
+      const d = x.getImageData(0, 0, 16, 16).data;
+      for (let i = 0; i < d.length; i += 4) if (d[i + 3] && (Math.abs(d[i] - d[i + 1]) > 30 || Math.abs(d[i + 1] - d[i + 2]) > 30)) return true;
+    } catch { /* no canvas */ }
+    return false;
+  })();
+  const flag = (cc) => {
+    if (!/^[A-Z]{2}$/.test(cc || '')) return '';
+    return FLAGS_OK ? String.fromCodePoint(...[...cc].map((c) => 0x1f1a5 + c.charCodeAt(0))) : `<i class="cc">${cc}</i>`;
+  };
+  // Soft, airy colour pairs; every destination country gets one of them, always the same one.
+  const THEMES = [['#dbeafe', '#f0f7ff', '#2563eb'], ['#dcfce7', '#f2fbf5', '#16a34a'], ['#fdeccd', '#fff8ee', '#d97706'], ['#fce7f3', '#fdf3f8', '#db2777'],
+    ['#ede9fe', '#f7f5ff', '#7c3aed'], ['#ccfbf1', '#f0fdfa', '#0d9488'], ['#ffe2e5', '#fff3f4', '#e11d48'], ['#e0e7ff', '#f2f4ff', '#4f46e5']];
+  const theme = (key) => {
+    let h = 0;
+    for (const c of String(key || 'x')) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    const [a, b, c] = THEMES[h % THEMES.length];
+    return `--t1:${a};--t2:${b};--t3:${c}`;
+  };
+  const originFlags = (codes) => [...new Set(codes.map((c) => (window.ORIGINS.find((o) => o[0] === c) || [])[2]).filter(Boolean))].map(flag).join('');
+  /** The band at the top of a route: departure flags, a dotted arc with a plane that flies it once, the destination flag. */
+  function band(w, big) {
+    const path = 'M24 52 C 96 6, 204 6, 276 52';
+    return `<div class="band${big ? ' big' : ''}" style="${theme(w.cc || w.dest)}" aria-hidden="true">
+      <svg viewBox="0 0 300 64" preserveAspectRatio="none"><path class="arc" d="${path}"/><circle cx="24" cy="52" r="3.5" class="dot-a"/><circle cx="276" cy="52" r="3.5" class="dot-b"/>
+        <g class="plane"${matchMedia('(prefers-reduced-motion: reduce)').matches ? ' transform="translate(150 17)"' : ''}><path d="M-6 -1.6 L4 -1.6 L7.5 0 L4 1.6 L-6 1.6 Z M-2 -1.6 L-4.5 -6 L-2.5 -6 L2 -1.6 Z M-2 1.6 L-4.5 6 L-2.5 6 L2 1.6 Z M-6 -1.6 L-7.6 -4 L-6.4 -4 L-4.6 -1.6 Z M-6 1.6 L-7.6 4 L-6.4 4 L-4.6 1.6 Z"/>
+        ${matchMedia('(prefers-reduced-motion: reduce)').matches ? '' : `<animateMotion dur="2.4s" begin="0s" fill="freeze" rotate="auto" keyPoints="0;1" keyTimes="0;1" calcMode="spline" keySplines="0.4 0 0.2 1" path="${path}"/>`}</g></svg>
+      <span class="band-from">${originFlags(w.origins)}<b>${esc(w.origins.length > 2 ? `${w.origins.length} airports` : w.origins.join(' · '))}</b></span>
+      <span class="band-to">${flag(w.cc) || ICON.plane}</span>
+    </div>`;
+  }
+  const IC = {
+    cal: '<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2.5"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>',
+    moon: '<svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',
+    plane: '<svg viewBox="0 0 24 24"><path d="M10.5 13.5L3 11l1.5-1.5 8 1 4-4c1-1 2.6-1.2 3.2-.6s.4 2.2-.6 3.2l-4 4 1 8L14.5 22l-2.5-7.5"/></svg>',
+    stops: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 12h3M14 12h3"/><circle cx="12" cy="12" r="1.2"/></svg>',
+    direct: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 12h10"/></svg>',
+  };
+  /** The cheapest trip as small icon chips: dates, nights, airline, stops. */
+  function tripChips(b, w) {
+    if (!b) return '';
+    const chips = [
+      `${IC.cal}<span>${w.kind === 'country' && b.destName ? `<b>${esc(b.destName)}</b> · ` : ''}${day(b.depart)}${b.ret ? ` – ${day(b.ret)}` : ''}</span>`,
+      b.ret ? `${IC.moon}<span>${b.nights} ${b.nights === 1 ? 'night' : 'nights'}</span>` : '',
+      b.airlineName ? `${IC.plane}<span>${esc(b.airlineName)}</span>` : '',
+      `${b.stops === 0 ? IC.direct : IC.stops}<span>${b.stops === 0 ? 'Direct' : b.stops === 1 ? '1 stop' : `${b.stops} stops`}</span>`,
+    ].filter(Boolean);
+    return `<div class="chips-trip">${chips.map((c) => `<span class="ct">${c}</span>`).join('')}</div>`;
+  }
+
   /** One verdict pill for any price against the usual cheapest fare: the same five labels everywhere. */
   function verdict(price, normal) {
     if (!price || !normal) return '';
@@ -177,21 +232,23 @@
   }
 
   function routeCard(w, i) {
-    const sub = `${w.origins.join(', ')} → ${w.dest}`;
     const meta = `${w.trip === 'return' ? 'Return' : 'One way'}${w.trip === 'return' ? ` · ${w.minNights}–${w.maxNights} nights` : ''} · ${windowLabel(w)}${w.maxStops === 0 ? ' · direct only' : ''}`;
     const price = w.low
-      ? `<div class="p num">${eur(w.low)}</div><div class="n">${w.trip === 'return' ? 'return' : 'one way'}, per person</div>`
+      ? `<div class="p num">${eur(w.low)}</div><div class="n">${w.trip === 'return' ? 'return' : 'one way'} · per person</div>`
       : `<div class="n">${w.error ? 'Check failed' : w.scannedAt ? 'No fares right now' : 'Checking…'}</div>`;
     const status = w.paused ? '<span class="badge normal">Paused</span>' : verdict(w.low, w.normal);
-    return `<a class="route enter${w.paused ? ' paused' : ''}" style="animation-delay:${i * 50}ms" href="#/route/${w.id}">
-      <div class="route-head">
-        <div><div class="route-city">${esc(placeTitle(w))}</div><div class="route-sub">${esc(sub)}</div><div class="route-meta">${esc(meta)}</div></div>
-        <div class="route-price">${price}</div>
-      </div>
-      ${w.best ? `<div class="route-trip">${ICON.cal}<span>${tripLine(w.best, w)}</span></div>` : ''}
-      <div class="route-foot">
-        <div class="route-tags">${status}${w.normal ? change(w.change) : ''}</div>
-        ${w.history.length > 1 ? spark(w.history) : ''}
+    return `<a class="route enter${w.paused ? ' paused' : ''}" style="animation-delay:${i * 60}ms" href="#/route/${w.id}">
+      ${band(w)}
+      <div class="route-body">
+        <div class="route-head">
+          <div><div class="route-city">${esc(placeTitle(w))}</div><div class="route-sub">${esc(meta)}</div></div>
+          <div class="route-price">${price}</div>
+        </div>
+        ${tripChips(w.best, w)}
+        <div class="route-foot">
+          <div class="route-tags">${status}${w.normal ? change(w.change) : ''}</div>
+          ${w.history.length > 1 ? spark(w.history) : ''}
+        </div>
       </div>
     </a>`;
   }
@@ -221,6 +278,7 @@
     }
     const judged = ws.filter((w) => w.low && w.normal && !w.paused);
     const best = judged.length ? judged.sort((a, b) => a.low / a.normal - b.low / b.normal)[0] : ws.filter((w) => w.low && !w.paused).sort((a, b) => a.low - b.low)[0];
+    const dealCount = ws.filter((w) => !w.paused && w.low && w.normal && w.low <= w.normal * 0.85).length;
     let sort = 'deal';
     try { sort = localStorage.getItem('fl-sort') || 'deal'; } catch { /* private mode */ }
     const SORTS = { deal: 'Best deal', price: 'Cheapest', name: 'A–Z', recent: 'Newest' };
@@ -232,8 +290,16 @@
       recent: (a, b) => b.id - a.id,
     }[sort] || (() => 0));
     view.innerHTML = `
-      <div class="hello enter"><h1>${deals ? `${deals} cheap ${deals > 1 ? 'routes' : 'route'} right now` : 'Watching your routes'}</h1>
-      <p>${ws.length} ${ws.length > 1 ? 'routes' : 'route'} tracked${best ? ` · ${judged.length ? 'best deal' : 'cheapest'}: ${esc(placeTitle(best))} from ${eur(best.low)}` : ''}</p>${live}</div>
+      <div class="hello enter">
+        <p class="greet">${(() => { const h = new Date().getHours(); return h < 6 ? 'Good night' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; })()} ✈️</p>
+        <h1>${dealCount ? `${dealCount} ${dealCount > 1 ? 'deals' : 'deal'} right now` : 'Watching your routes'}</h1>
+        <div class="stats">
+          <div><span>${IC.plane}Routes</span><b class="num">${ws.length}</b></div>
+          <div><span>${ICON.bell}Deals</span><b class="num">${dealCount}</b></div>
+          ${best ? `<a href="#/route/${best.id}"><span>${flag(best.cc) || IC.plane}${judged.length ? 'Best deal' : 'Cheapest'}</span><b class="num">${eur(best.low)}</b><small>${esc(placeTitle(best))}</small></a>` : ''}
+        </div>
+        ${live}
+      </div>
       ${demo}
       ${ws.length > 2 ? `<div class="sortbar enter">${Object.entries(SORTS).map(([k, l]) => `<button class="pill${k === sort ? ' on' : ''}" data-sort="${k}">${l}</button>`).join('')}</div>` : ''}
       <div class="routes">${sorted.map(routeCard).join('')}</div>
@@ -480,8 +546,8 @@
         <button class="pill-btn" data-edit="${w.id}">${ICON.edit} Edit</button>
       </div>
 
-      <section class="dhero enter">
-        <div class="dh-route">${w.origins.map(esc).join(' · ')} <i>→</i> ${esc(country ? w.city : w.dest)}</div>
+      <section class="dhero enter" style="${theme(w.cc || w.dest)}">
+        ${band(w, true)}
         <h1>${esc(placeTitle(w))}</h1>
         <div class="dh-meta">${esc(meta)}${w.airlines.length ? ` · only ${esc(w.airlines.map(airlineName).join(', '))}` : ''}${w.paused ? ' · <b>paused</b>' : ''}</div>
         ${best ? `

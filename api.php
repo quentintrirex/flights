@@ -42,6 +42,8 @@ function watch_view(array $w): array
         'scannedAt' => $w['scanned_at'], 'error' => $w['scan_error'], 'normal' => $w['normal_price'],
         'low' => $w['low_price'], 'level' => $w['low_price'] ? level_for((int) $w['low_price'], $w['normal_price']) : 'none',
         'change' => $prev && $w['low_price'] ? round(($w['low_price'] - $prev) / $prev * 100) : null,
+        // ISO country code of the destination, for its flag and colours.
+        'cc' => $w['kind'] === 'country' ? $w['dest'] : (city_info($w['dest'])[1] ?? null),
         'cities' => $w['kind'] === 'country' ? array_map(fn($c) => city_info($c)[0] ?? $c, country_cities($w['dest'], 6)) : [],
         'history' => array_reverse(array_map('intval', $hist)),
         // The cheapest trip right now, so a route card can say when, with whom and how.

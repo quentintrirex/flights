@@ -702,3 +702,73 @@ body { background: var(--bg); color: var(--ink); }
 .c-o { background: var(--deal-soft); color: var(--great); }
 .c-n { background: var(--surface); color: var(--ink); }
 .c-h { background: #fff4ec; color: #b4531c; }
+
+/* =====================================================================
+   Personality: a destination band on every route (soft colour per
+   country, flags, a dotted flight path with a plane that flies it once).
+   ===================================================================== */
+.route { padding: 0; overflow: hidden; }
+.route-body { padding: 14px 18px 16px; }
+.band { position: relative; height: 78px; background: linear-gradient(135deg, var(--t1), var(--t2)); overflow: hidden; }
+.band::before { content: ""; position: absolute; inset: 0; opacity: .5;
+  background-image: radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--t3) 22%, transparent) 1px, transparent 0); background-size: 14px 14px; }
+.band svg { position: absolute; left: 0; right: 0; top: 6px; width: 100%; height: 64px; overflow: visible; }
+.band .arc { fill: none; stroke: var(--t3); stroke-width: 1.6; stroke-dasharray: 2 6; stroke-linecap: round; opacity: .55; vector-effect: non-scaling-stroke; }
+.band .dot-a, .band .dot-b { fill: var(--t3); }
+.band .dot-a { opacity: .5; }
+.band .plane { fill: var(--t3); }
+.band-from { position: absolute; left: 12px; bottom: 10px; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px 0 8px; border-radius: 99px;
+             background: rgba(255,255,255,.85); font-size: 13px; letter-spacing: 1px; box-shadow: 0 1px 2px rgba(15,29,58,.06); }
+.band-from b { font-size: 11.5px; font-weight: 700; letter-spacing: .04em; color: var(--ink-2); }
+.band-to { position: absolute; right: 12px; top: 12px; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center;
+           background: #fff; font-size: 24px; line-height: 1; box-shadow: 0 4px 14px color-mix(in srgb, var(--t3) 25%, transparent); }
+.band-to svg { width: 20px; height: 20px; fill: none; stroke: var(--t3); stroke-width: 1.8; position: static; }
+.band.big { height: 96px; margin: -22px -20px 16px; border-radius: 24px 24px 0 0; }
+.band.big svg { height: 80px; top: 6px; }
+.band.big .band-to { width: 54px; height: 54px; font-size: 30px; top: 14px; right: 16px; }
+.band.big .band-from { left: 16px; bottom: 12px; }
+.dhero { background: linear-gradient(180deg, var(--t2, var(--surface)) 0, var(--surface) 140px); }
+.route:hover .band .plane { animation: none; }
+.route:active { transform: scale(.99); }
+
+/* Trip chips with icons: dates, nights, airline, stops */
+.chips-trip { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.ct { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 9px; background: var(--surface); font-size: 12.5px; font-weight: 550; color: var(--ink-2); white-space: nowrap; }
+.ct svg { width: 14px; height: 14px; flex: none; fill: none; stroke: var(--ink-3); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.ct b { color: var(--ink); font-weight: 650; }
+.route-trip { display: none; }
+
+/* Spacing: one rhythm (8 / 12 / 16 / 24) */
+.view { padding-top: 4px; }
+.hello { margin: 20px 0 18px; }
+.hello h1 { margin-bottom: 4px; }
+.live { margin-top: 10px; }
+.routes { gap: 14px; }
+.route-head { gap: 14px; align-items: flex-start; }
+.route-city { font-size: 18.5px; line-height: 1.25; }
+.route-sub { margin-top: 3px; white-space: normal; }
+.route-price .p { line-height: 1.05; }
+.route-foot { margin-top: 14px; min-height: 28px; }
+.summary { margin-top: 16px; padding: 18px 18px 8px; }
+.d-print { margin: 12px 4px 0; }
+.air { margin-top: 26px; }
+.tabs { margin: 24px 0 16px; }
+.section-title { margin: 28px 0 12px; }
+.manage { margin-bottom: 8px; }
+@media (prefers-reduced-motion: reduce) { .band .plane animateMotion { display: none; } }
+/* Home header: greeting, headline, three small stat tiles */
+.greet { margin: 0 0 4px; font-size: 14px; font-weight: 600; color: var(--ink-3); }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+.stats > * { display: flex; flex-direction: column; gap: 2px; padding: 11px 12px; border-radius: 16px; background: var(--surface); min-width: 0; }
+.stats span { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--ink-3); }
+.stats span svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.stats b { font-size: 22px; font-weight: 750; letter-spacing: -.03em; color: var(--ink); line-height: 1.1; }
+.stats small { font-size: 11.5px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stats a:active { transform: scale(.98); }
+/* Country-code badge where the device has no flag emoji */
+.cc { display: inline-grid; place-items: center; min-width: 22px; height: 16px; padding: 0 4px; border-radius: 4px; font-style: normal; font-size: 9.5px; font-weight: 800;
+      letter-spacing: .04em; color: var(--t3, var(--ink-2)); background: color-mix(in srgb, var(--t3, var(--ink-3)) 14%, #fff); vertical-align: 1px; }
+.band-to .cc { min-width: 0; height: auto; padding: 0; background: none; font-size: 15px; letter-spacing: .02em; }
+.band.big .band-to .cc { font-size: 18px; }
+.band-from .cc + .cc { margin-left: -2px; }
+.stats span .cc { height: 14px; font-size: 8.5px; }
