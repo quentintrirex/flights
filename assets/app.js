@@ -46,6 +46,9 @@
     chev: '<svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>',
     pause: '<svg viewBox="0 0 24 24"><path d="M9 5v14M15 5v14"/></svg>',
     play: '<svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7V5z"/></svg>',
+    cal: '<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>',
+    share: '<svg viewBox="0 0 24 24"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7"/></svg>',
+    copy: '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>',
     trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
     clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
     bed: '<svg viewBox="0 0 24 24"><path d="M3 18V7M3 14h18v4M21 14v-2a3 3 0 0 0-3-3h-7v5"/><circle cx="7" cy="11" r="2"/></svg>',
@@ -87,7 +90,7 @@
     const pts = values.map((v, i) => [(i / (values.length - 1)) * w, h - 3 - ((v - min) / span) * (h - 6)]);
     const d = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
     const last = pts[pts.length - 1];
-    return `<svg class="spark" viewBox="0 0 ${w} ${h}" aria-hidden="true"><defs><linearGradient id="sparkfill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0d0f14" stop-opacity=".08"/><stop offset="1" stop-color="#0d0f14" stop-opacity="0"/></linearGradient></defs>
+    return `<svg class="spark" viewBox="0 0 ${w} ${h}" aria-hidden="true"><defs><linearGradient id="sparkfill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".08"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
       <path class="a" d="${d} L ${w} ${h} L 0 ${h} Z"/><path class="l" d="${d}"/><circle cx="${last[0]}" cy="${last[1]}" r="3"/></svg>`;
   }
 
@@ -139,18 +142,29 @@
       ? `<div class="live"><i></i>Live prices · checked ${ago(last)} · every ${state.everyHours} h</div>` : '';
     if (!ws.length) {
       view.innerHTML = `${demo}<div class="empty enter">
-        <svg class="art" viewBox="0 0 220 110" aria-hidden="true"><path class="arc" d="M20 90 C 70 10, 150 10, 200 90"/><circle cx="20" cy="90" r="4" fill="#0d0f14"/><circle cx="200" cy="90" r="4" fill="#0f9f62"/><circle class="plane" r="4"/></svg>
+        <svg class="art" viewBox="0 0 220 110" aria-hidden="true"><path class="arc" d="M20 90 C 70 10, 150 10, 200 90"/><circle cx="20" cy="90" r="4" fill="currentColor"/><circle cx="200" cy="90" r="4" fill="#0f9f62"/><circle class="plane" r="4"/></svg>
         <h2>Where do you want to go?</h2>
         <p>Add a city or a whole country. I check prices every few hours and tell you the moment a fare gets really cheap.</p>
         <button class="btn primary" data-add>${ICON.plus} Track a route</button></div>`;
       return;
     }
     const best = ws.filter((w) => w.low && !w.paused).sort((a, b) => a.low / (a.normal || a.low) - b.low / (b.normal || b.low))[0];
+    let sort = 'deal';
+    try { sort = localStorage.getItem('fl-sort') || 'deal'; } catch { /* private mode */ }
+    const SORTS = { deal: 'Best deal', price: 'Cheapest', name: 'A–Z', recent: 'Newest' };
+    const rank = (w) => (w.paused ? 9 : w.low && w.normal ? w.low / w.normal : 5);
+    const sorted = [...ws].sort({
+      deal: (a, b) => rank(a) - rank(b),
+      price: (a, b) => (a.paused - b.paused) || (a.low || 1e9) - (b.low || 1e9),
+      name: (a, b) => placeTitle(a).localeCompare(placeTitle(b)),
+      recent: (a, b) => b.id - a.id,
+    }[sort] || (() => 0));
     view.innerHTML = `
       <div class="hello enter"><h1>${deals ? `${deals} cheap ${deals > 1 ? 'routes' : 'route'} right now` : 'Watching your routes'}</h1>
       <p>${ws.length} ${ws.length > 1 ? 'routes' : 'route'} tracked${best ? ` · best: ${esc(placeTitle(best))} from ${eur(best.low)}` : ''}</p>${live}</div>
       ${demo}
-      <div class="routes">${ws.map(routeCard).join('')}</div>
+      ${ws.length > 2 ? `<div class="sortbar enter">${Object.entries(SORTS).map(([k, l]) => `<button class="pill${k === sort ? ' on' : ''}" data-sort="${k}">${l}</button>`).join('')}</div>` : ''}
+      <div class="routes">${sorted.map(routeCard).join('')}</div>
       <button class="btn primary fab" data-add>${ICON.plus} Track a route</button>`;
   }
 
@@ -284,10 +298,38 @@
         ${leg('Return', f.ret, f.retTime, f.dest, f.origin, f.airline, null, f.stopsBack, f.durBack)}` : ''}
       <div class="facts">${facts.map(([l, v, s]) => `<div><span>${l}</span><b class="num">${v}</b>${s ? `<small>${esc(s)}</small>` : ''}</div>`).join('')}</div>
       <p class="muted small trip-note">${f.depTime ? '' : 'Times show up after the next price check. '}Price for 1 adult in economy, as found by Aviasales users in the last few days. Always confirm on the booking site.</p>
+      <div class="trip-extra">
+        <button class="btn small ghost" data-ics>${ICON.cal} Add to calendar</button>
+        <button class="btn small ghost" data-share>${ICON.share} Share</button>
+      </div>
       <div class="sheet-foot trip-actions">
         ${safeUrl(f.book) ? `<a class="btn deal block" href="${esc(f.book)}" target="_blank" rel="noopener noreferrer">Book this fare</a>` : ''}
         <a class="btn block" href="${esc(safeUrl(f.google))}" target="_blank" rel="noopener noreferrer">Check on Google Flights</a>
-      </div>`);
+      </div>`, (sheet) => {
+      const title = `${originName(f.origin)} → ${destLabel}`;
+      const summary = `${title}: ${eur(f.price)} · ${weekday(f.depart)} ${day(f.depart)}${f.depTime ? ' ' + f.depTime : ''}${f.ret ? ` – ${weekday(f.ret)} ${day(f.ret)} (${f.nights} nights)` : ' one way'} · ${stops(f.stops)}${f.airlineName ? ' · ' + f.airlineName : ''}`;
+      const link = safeUrl(f.book) || safeUrl(f.google);
+      $('[data-ics]', sheet).onclick = () => {
+        // One all-day event for the whole trip: flight times are local to each airport, so dates are what is certain.
+        const d = (s, add = 0) => { const x = new Date(s + 'T12:00:00'); x.setDate(x.getDate() + add); return x.toISOString().slice(0, 10).replace(/-/g, ''); };
+        const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Flights//trirexio//EN', 'BEGIN:VEVENT',
+          `UID:${f.id}-${Date.now()}@trirexio.com`, `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}Z`,
+          `DTSTART;VALUE=DATE:${d(f.depart)}`, `DTEND;VALUE=DATE:${d(f.ret || f.depart, 1)}`,
+          `SUMMARY:✈ ${title}`, `DESCRIPTION:${summary.replace(/[,;\\]/g, (c) => '\\' + c)}\\n${link}`, `URL:${link}`,
+          'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));
+        a.download = `flight-${f.origin}-${f.dest}-${f.depart}.ics`;
+        document.body.append(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      };
+      $('[data-share]', sheet).onclick = async () => {
+        try {
+          if (navigator.share) await navigator.share({ title: `✈ ${title}`, text: summary, url: link });
+          else { await navigator.clipboard.writeText(`${summary}\n${link}`); toast('Copied', 'Paste it anywhere.'); }
+        } catch { /* cancelled */ }
+      };
+    });
   }
 
   /* Quick filter: tap airlines to see only their fares (does not change the route itself). */
@@ -354,7 +396,7 @@
     const vsTxt = ratio ? (ratio < 0.97 ? `${Math.round((1 - ratio) * 100)}% below normal` : ratio > 1.03 ? `${Math.round((ratio - 1) * 100)}% above normal` : 'About the normal price') : '';
     const insights = [country ? bars(data.byCity, 'Cheapest per city') : '',
       bars(data.byOrigin, 'Cheapest per departure airport', (r) => `${esc(originName(r.key))} <small>${esc(r.key)}</small>`),
-      bars(data.byWeekday, 'Cheapest day of the week to leave'), bars(data.byStops, 'Direct or with stops')].join('');
+      bars(data.byNights, 'Cheapest by trip length'), bars(data.byWeekday, 'Cheapest day of the week to leave'), bars(data.byStops, 'Direct or with stops')].join('');
     const panel = (k) => `class="tabp" data-panel="${k}"${tab === k ? '' : ' hidden'}`;
 
     view.innerHTML = `
@@ -428,6 +470,7 @@
       <div class="manage">
         <button data-scan="${w.id}">${ICON.refresh}<span>Check prices now</span></button>
         <button data-edit="${w.id}">${ICON.edit}<span>Edit route</span></button>
+        <button data-copy="${w.id}">${ICON.copy}<span>Copy as a new route</span></button>
         <button data-pause="${w.id}" data-paused="${w.paused ? 1 : 0}">${w.paused ? ICON.play : ICON.pause}<span>${w.paused ? 'Resume alerts' : 'Pause alerts'}</span></button>
         <button class="danger" data-delete="${w.id}">${ICON.trash}<span>Delete route</span></button>
       </div>`;
@@ -480,14 +523,14 @@
     return [...countries.values(), ...out].slice(0, 7);
   }
 
-  function editSheet(w) {
+  function editSheet(w, copyFrom) {
     const today = new Date().toISOString().slice(0, 10);
-    const f = w ? { ...w } : { kind: 'city', origins: ['AMS', 'EIN', 'RTM'], dest: '', city: '', country: '', trip: 'return', months: 3, dateFrom: null, dateTo: null, minNights: 7, maxNights: 21, maxStops: 1, alert: 'great', maxPrice: null, airlines: [] };
+    const f = w ? { ...w } : copyFrom ? { ...copyFrom, airlines: [...(copyFrom.airlines || [])] } : { kind: 'city', origins: ['AMS', 'EIN', 'RTM'], dest: '', city: '', country: '', trip: 'return', months: 3, dateFrom: null, dateTo: null, minNights: 7, maxNights: 21, maxStops: 1, alert: 'great', maxPrice: null, airlines: [] };
     f.airlines = [...(f.airlines || [])];
     let when = f.dateFrom ? 'custom' : String(f.months);
     const seg = (name, opts, val) => `<div class="seg" data-seg="${name}">${opts.map(([v, l]) => `<button type="button" data-v="${v}" class="${String(v) === String(val) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
     openSheet(`
-      <h2>${w ? 'Edit route' : 'Track a route'}</h2>
+      <h2>${w ? 'Edit route' : copyFrom ? 'Copy of this route' : 'Track a route'}</h2>${copyFrom ? '<p class="muted copy-note">Change what you want (for example the dates or airports) and save it as a new route.</p>' : ''}
       <div class="field"><span class="lbl">From</span><div class="chips" id="origins">${window.ORIGINS.map(([c, n]) => `<button type="button" class="chip${f.origins.includes(c) ? ' on' : ''}" data-o="${c}">${n}<small>${c}</small></button>`).join('')}</div></div>
       <div class="field"><label for="dest">To</label><div id="dest-box"></div><div class="hint">A city, an airport, or a whole country (e.g. Thailand).</div></div>
       <div class="field"><span class="lbl">Trip</span>${seg('trip', [['return', 'Return'], ['oneway', 'One way']], f.trip)}</div>
@@ -727,7 +770,7 @@
   }
 
   document.addEventListener('click', async (e) => {
-    const t = e.target.closest('[data-more],[data-add],[data-edit],[data-scan],[data-pause],[data-delete],[data-fare],[data-back],[data-month],[data-day],[data-range] button,[data-allfares],[data-air],[data-tab]');
+    const t = e.target.closest('[data-more],[data-add],[data-edit],[data-copy],[data-sort],[data-scan],[data-pause],[data-delete],[data-fare],[data-back],[data-month],[data-day],[data-range] button,[data-allfares],[data-air],[data-tab]');
     if (!t) return;
     if (t.matches('[data-tab]')) {
       const k = t.dataset.tab;
@@ -758,6 +801,8 @@
     if (t.matches('[data-back]')) { location.hash = '#/'; return; }
     if (t.matches('[data-add]')) return editSheet(null);
     if (t.matches('[data-edit]')) return editSheet(routeData.watch);
+    if (t.matches('[data-copy]')) return editSheet(null, routeData.watch);
+    if (t.matches('[data-sort]')) { try { localStorage.setItem('fl-sort', t.dataset.sort); } catch { /* private mode */ } home(false); return; }
     if (t.matches('[data-month]')) {
       $$('[data-month]').forEach((b) => b.classList.toggle('on', b === t));
       const m = t.dataset.month, w = routeData.watch;

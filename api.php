@@ -117,6 +117,15 @@ function route_detail(array $w, array $air = []): array
         'byWeekday' => $byWeekday,
         'byCity' => $w['kind'] === 'country' ? $min($fares, fn($f) => $f['dest_name'] ?: $f['dest']) : [],
         'byStops' => $min($fares, fn($f) => stops_label((int) $f['stops'])),
+        // How the price moves with the length of the trip (return routes), shortest first.
+        'byNights' => (function () use ($fares, $min) {
+            $buckets = [4 => 'Up to 4 nights', 7 => '5–7 nights', 10 => '8–10 nights', 14 => '11–14 nights', 21 => '15–21 nights', 999 => '22+ nights'];
+            $label = function ($n) use ($buckets) { if (!$n) return null; foreach ($buckets as $max => $l) if ($n <= $max) return $l; return null; };
+            $rows = $min($fares, fn($f) => $label((int) $f['nights']));
+            $order = array_flip(array_values($buckets));
+            usort($rows, fn($a, $b) => $order[$a['key']] <=> $order[$b['key']]);
+            return $rows;
+        })(),
         'alerts' => q('SELECT title, body, level, created_at AS at FROM alerts WHERE watch_id=? ORDER BY id DESC LIMIT 8', [$w['id']])->fetchAll(),
     ];
 }
