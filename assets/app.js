@@ -100,7 +100,7 @@
   }
 
   function vsNormal(w) {
-    if (!w.low || !w.normal) return `<span class="muted small">${w.scannedAt ? 'Learning the normal price' : ''}</span>`;
+    if (!w.low || !w.normal) return `<span class="muted small">${w.scannedAt ? 'Learning prices · deals from day 3' : ''}</span>`;
     const r = w.low / w.normal;
     if (r < 0.97) return `<span class="vs-mini below">${Math.round((1 - r) * 100)}% below normal</span>`;
     if (r > 1.03) return `<span class="vs-mini above">${Math.round((r - 1) * 100)}% above normal</span>`;
@@ -111,7 +111,7 @@
     const sub = `${w.origins.join(', ')} → ${w.dest}`;
     const meta = `${w.trip === 'return' ? 'Return' : 'One way'}${w.trip === 'return' ? ` · ${w.minNights}–${w.maxNights} nights` : ''} · ${windowLabel(w)}`;
     const price = w.low
-      ? `<div class="p num">${eur(w.low)}</div><div class="n">${w.normal ? 'normally ' + eur(w.normal) : 'lowest found'}</div>`
+      ? `<div class="p num">${eur(w.low)}</div><div class="n">${w.normal ? 'usually ' + eur(w.normal) : 'lowest found'}</div>`
       : `<div class="n">${w.error ? 'Check failed' : w.scannedAt ? 'No fares' : 'Checking…'}</div>`;
     return `<a class="route enter${w.paused ? ' paused' : ''}" style="animation-delay:${i * 50}ms" href="#/route/${w.id}">
       <div class="route-head">
@@ -382,7 +382,7 @@
 
     const tiles = [
       ['Lowest now', best ? eur(best.price) : '–', w.change ? change(w.change) + ' since yesterday' : ''],
-      ['Normal price', w.normal ? eur(w.normal) : '–', w.normal ? 'median of daily lows' : 'needs a few checks'],
+      ['Usual lowest', w.normal ? eur(w.normal) : '–', w.normal ? 'cheapest fare on a typical day' : 'learning, ready on day 3'],
       ['Lowest ever seen', st.lowestEver ? eur(st.lowestEver) : '–', st.lowestEverDay ? 'on ' + day(st.lowestEverDay) : ''],
       ['Last 7 days', st.week !== null ? `${st.week > 0 ? '+' : ''}${st.week}%` : '–', st.week !== null ? (st.week < 0 ? 'getting cheaper' : st.week > 0 ? 'getting pricier' : 'steady') : `${st.days} ${st.days === 1 ? 'day' : 'days'} of history`],
     ];
@@ -424,7 +424,7 @@
           <em>Trip details ${ICON.chev}</em>
         </button>
         ${w.normal ? `<div class="meter"><div class="mark" style="left:${normalPos}%"></div><div class="pin" style="left:${normalPos}%" data-pin="${pinPos}"></div></div>
-        <div class="meter-legend"><span>Steal</span><span>Normal ${eur(w.normal)}</span><span>Pricey</span></div>` : ''}
+        <div class="meter-legend"><span>Steal</span><span>Usual ${eur(w.normal)}</span><span>Pricey</span></div>` : ''}
         <div class="dh-actions">
           ${safeUrl(best.book) ? `<a class="btn light" href="${esc(best.book)}" target="_blank" rel="noopener noreferrer">Book this fare</a>` : ''}
           <a class="btn glass" href="${esc(safeUrl(best.google))}" target="_blank" rel="noopener noreferrer">Google Flights</a>
@@ -548,7 +548,7 @@
         <div class="hint" id="air-hint"></div>
         <div class="al-box" id="al-box" hidden><input class="input al-search" id="air-q" placeholder="Search airlines" autocomplete="off"><div class="al-list" id="al-list"></div></div></div>
       <div class="field"><span class="lbl">Notify me about</span>${seg('alert', [['extreme', 'Only extreme'], ['great', 'Great +'], ['good', 'Every deal']], f.alert)}
-        <div class="hint">Extreme = 45% or more under the normal price. Great = 30%. Good = 15%.</div>
+        <div class="hint">A deal is a real price drop: the cheapest fare compared with the usual cheapest fare of the last 30 days. Extreme = 45% lower, great = 30%, good = 15%.</div>
         <input class="input" style="margin-top:10px" type="number" inputmode="numeric" id="maxPrice" placeholder="And always below € (optional), e.g. 450" value="${f.maxPrice || ''}"></div>
       <div class="sheet-foot"><button class="btn primary block" id="save">${w ? 'Save changes' : 'Start tracking'}</button></div>`, (sheet) => {
       const destBox = $('#dest-box', sheet);

@@ -67,13 +67,13 @@ $w = watch(1);
 $r = scan_watch($w);
 $w = watch(1);
 check('first scan finds fares', $r['ok'] && $r['fares'] > 20, json_encode($r));
-check('normal price set', $w['normal_price'] > 0);
+check('day one: still learning the usual lowest fare (no deal levels yet)', $w['normal_price'] === null && level_for((int) $w['low_price'], null) === 'none');
 check('first scan raises no alert (baseline)', $r['alert'] === null && (int) q('SELECT COUNT(*) FROM alerts')->fetchColumn() === 0);
 $bad = q('SELECT COUNT(*) FROM fares WHERE stops>1 OR nights<7 OR nights>21 OR depart<?', ['2026-10-03'])->fetchColumn();
 check('filters: stops, nights, past dates', (int) $bad === 0);
 
 $alerts = 0;
-for ($i = 1; $i <= 16; $i++) {
+for ($i = 1; $i <= 40; $i++) {
     putenv('FLIGHTS_NOW=' . (strtotime('2026-10-03 09:00') + $i * 3 * 3600));
     $r = scan_watch(watch(1));
     if ($r['alert']) $alerts++;
@@ -88,15 +88,16 @@ check('quiet rule: within 7 days only clearly better fares alert again', $quiet)
 $a = q('SELECT * FROM alerts ORDER BY id LIMIT 1')->fetch();
 check('alert text', str_contains($a['title'], 'Bangkok for €') && str_contains($a['body'], 'below normal'), $a['title'] . ' | ' . $a['body']);
 $before = $n;
-putenv('FLIGHTS_NOW=' . (strtotime('2026-10-03 09:00') + 16 * 3 * 3600 + 60));
+putenv('FLIGHTS_NOW=' . (strtotime('2026-10-03 09:00') + 40 * 3 * 3600 + 60));
 scan_watch(watch(1));
 check('same prices again = no duplicate alert', (int) q('SELECT COUNT(*) FROM alerts')->fetchColumn() === $before);
+check('normal = usual lowest fare once there is history', (function () { $w = watch(1); $lows = q('SELECT low FROM history WHERE watch_id=1')->fetchAll(PDO::FETCH_COLUMN); return $w['normal_price'] >= min($lows) && $w['normal_price'] <= max($lows); })());
 check('history kept per day', (int) q('SELECT COUNT(*) FROM history WHERE watch_id=1')->fetchColumn() >= 2);
 
 q('DELETE FROM alerts');
 q('UPDATE fares SET notified_price=NULL');
 q('UPDATE watches SET max_price=99999, alert=? WHERE id=1', ['extreme']);
-putenv('FLIGHTS_NOW=' . (strtotime('2026-10-03 09:00') + 20 * 3 * 3600));
+putenv('FLIGHTS_NOW=' . (strtotime('2026-10-03 09:00') + 44 * 3 * 3600));
 $r = scan_watch(watch(1));
 check('target price triggers alert', $r['alert'] !== null);
 

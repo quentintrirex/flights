@@ -237,9 +237,13 @@ function scan_watch(array $w, ?Provider $p = null): array
                ON CONFLICT(watch_id,day) DO UPDATE SET low=MIN(low,excluded.low), normal=COALESCE(excluded.normal,normal), fares=excluded.fares',
               [$w['id'], $today, $low, $scanNormal, count($found)]);
         }
-        $hist = q('SELECT normal FROM history WHERE watch_id=? AND day>=? AND normal IS NOT NULL',
-                  [$w['id'], date('Y-m-d', $t - 30 * 86400)])->fetchAll(PDO::FETCH_COLUMN);
-        $normal = count($hist) >= 3 ? median(array_map('intval', $hist)) : ($scanNormal ?? ($w['normal_price'] ? (int) $w['normal_price'] : null));
+        // "Normal" = the usual LOWEST fare: the median of the daily lowest fare on earlier days (last 30).
+        // Comparing today's cheapest fare with the median of all dates (as before) made the cheapest
+        // date look like a deal every single day; this only calls a drop in price a deal.
+        // Until two earlier days are known the route is still learning (no deal levels yet).
+        $hist = q('SELECT low FROM history WHERE watch_id=? AND day>=? AND day<?',
+                  [$w['id'], date('Y-m-d', $t - 30 * 86400), $today])->fetchAll(PDO::FETCH_COLUMN);
+        $normal = count($hist) >= 2 ? median(array_map('intval', $hist)) : null;
 
         $up = $db->prepare('INSERT INTO fares(watch_id,k,origin,dest,dest_name,depart,ret,nights,price,airline,stops,duration,link,first_seen,last_seen,
                 dep_time,ret_time,stops_out,stops_back,dur_out,dur_back,flight_no)
