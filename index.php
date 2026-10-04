@@ -39,7 +39,7 @@ $v = static fn(string $f) => $f . '?v=' . (@filemtime(__DIR__ . '/' . $f) ?: 1);
 <main id="view" class="view"></main>
 <div id="sheet-root"></div>
 <div id="toasts" aria-live="polite"></div>
-<script src="<?= $v('places.php') ?>"></script>
+<script src="places.php?v=<?= max(@filemtime(__DIR__ . '/places.php'), @filemtime(__DIR__ . '/src/app.php'), @filemtime(__DIR__ . '/src/places.php')) ?>"></script>
 <script src="<?= $v('assets/app.js') ?>"></script>
 </body>
 </html>

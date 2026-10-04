@@ -38,6 +38,7 @@ function watch_view(array $w): array
         'dateFrom' => $w['date_from'], 'dateTo' => $w['date_to'], 'from' => $from, 'to' => $to,
         'minNights' => $w['min_nights'], 'maxNights' => $w['max_nights'], 'maxStops' => $w['max_stops'],
         'alert' => $w['alert'], 'maxPrice' => $w['max_price'], 'paused' => (bool) $w['paused'],
+        'airlines' => array_values(array_filter(explode(',', (string) $w['airlines']))),
         'scannedAt' => $w['scanned_at'], 'error' => $w['scan_error'], 'normal' => $w['normal_price'],
         'low' => $w['low_price'], 'level' => $w['low_price'] ? level_for((int) $w['low_price'], $w['normal_price']) : 'none',
         'change' => $prev && $w['low_price'] ? round(($w['low_price'] - $prev) / $prev * 100) : null,
@@ -53,15 +54,25 @@ function fare_view(array $f, array $w): array
         'depart' => $f['depart'], 'ret' => $f['ret'], 'nights' => $f['nights'], 'price' => $f['price'],
         'airline' => $f['airline'], 'airlineName' => airline_name($f['airline']), 'stops' => $f['stops'],
         'duration' => $f['duration'], 'book' => $f['link'], 'google' => google_flights_url($f),
+        'depTime' => $f['dep_time'], 'retTime' => $f['ret_time'], 'flightNo' => $f['flight_no'],
+        'stopsOut' => $f['stops_out'], 'stopsBack' => $f['stops_back'], 'durOut' => $f['dur_out'], 'durBack' => $f['dur_back'],
         'level' => level_for((int) $f['price'], $w['normal_price']),
         'isNew' => $w['scans'] > 1 && $f['first_seen'] >= now() - 86400 && $f['first_seen'] > $w['created_at'] + 3600,
     ];
 }
 
-/** Everything the route screen shows: stats, history, calendar and breakdowns. */
-function route_detail(array $w): array
+/** Airline codes from a request (?air=KL,HV), for a quick filter on the route screen. */
+function air_param(): array
 {
-    $fares = live_fares($w);
+    $codes = array_map('strtoupper', explode(',', (string) ($_GET['air'] ?? '')));
+    return array_slice(array_values(array_unique(array_filter($codes, fn($c) => preg_match('/^[A-Z0-9]{2,3}$/', $c)))), 0, 20);
+}
+
+/** Everything the route screen shows: stats, history, calendar and breakdowns. $air narrows it to some airlines. */
+function route_detail(array $w, array $air = []): array
+{
+    $all = live_fares($w);
+    $fares = $air ? array_values(array_filter($all, fn($f) => in_array($f['airline'], $air, true))) : $all;
     $min = function (array $rows, callable $key): array {
         $o = [];
         foreach ($rows as $f) {
@@ -100,6 +111,9 @@ function route_detail(array $w): array
         'calendar' => $calendar,
         'byOrigin' => $min($fares, fn($f) => $f['origin']),
         'byAirline' => array_map(fn($r) => $r + ['name' => airline_name($r['key'])], array_slice($min($fares, fn($f) => $f['airline']), 0, 6)),
+        // Every airline on this route (before the quick filter), cheapest first: the filter chips.
+        'airlines' => array_map(fn($r) => $r + ['name' => airline_name($r['key'])], $min($all, fn($f) => $f['airline'])),
+        'air' => $air,
         'byWeekday' => $byWeekday,
         'byCity' => $w['kind'] === 'country' ? $min($fares, fn($f) => $f['dest_name'] ?: $f['dest']) : [],
         'byStops' => $min($fares, fn($f) => stops_label((int) $f['stops'])),
@@ -135,19 +149,25 @@ function save_watch(array $in, ?int $id = null): int
         if ($to > date('Y-m-d', strtotime(today() . ' +12 months'))) out(['error' => 'Prices are only known up to a year ahead.'], 422);
     }
     $clip = fn($s, $n) => mb_substr(trim(preg_replace('/[\x00-\x1F\x7F]/u', '', (string) $s)), 0, $n);
+    // Only these airlines (empty = any). Two or three letter codes, at most 12.
+    $airlines = array_values(array_unique(array_filter(array_map(fn($a) => strtoupper(trim((string) $a)), (array) ($in['airlines'] ?? [])),
+        fn($a) => preg_match('/^[A-Z0-9]{2,3}$/', $a))));
+    if (count($airlines) > 12) out(['error' => 'Pick at most 12 airlines.'], 422);
+    $airlines = implode(',', $airlines);
     $row = [
         implode(',', $origins), $dest, $clip($in['city'] ?? '', 60) ?: $dest, $clip($in['country'] ?? '', 60),
         ($in['trip'] ?? 'return') === 'oneway' ? 'oneway' : 'return', max(1, min(12, (int) ($in['months'] ?? 3))),
         $min, $max, max(-1, min(2, (int) ($in['maxStops'] ?? 1))),
         in_array($in['alert'] ?? '', ['good', 'great', 'extreme'], true) ? $in['alert'] : 'great',
-        !empty($in['maxPrice']) ? max(1, min(100000, (int) $in['maxPrice'])) : null, $kind, $from, $to,
+        !empty($in['maxPrice']) ? max(1, min(100000, (int) $in['maxPrice'])) : null, $kind, $from, $to, $airlines,
     ];
-    $cols = 'origins=?,dest=?,dest_city=?,dest_country=?,trip=?,months=?,min_nights=?,max_nights=?,max_stops=?,alert=?,max_price=?,kind=?,date_from=?,date_to=?';
+    $cols = 'origins=?,dest=?,dest_city=?,dest_country=?,trip=?,months=?,min_nights=?,max_nights=?,max_stops=?,alert=?,max_price=?,kind=?,date_from=?,date_to=?,airlines=?';
     if ($id) {
         $old = watch($id) ?? out(['error' => 'Route not found.'], 404);
         // Different route or search: start over, so the first check sets a new baseline instead of alerting.
         $same = $old['origins'] === $row[0] && $old['dest'] === $row[1] && $old['trip'] === $row[4] && $old['kind'] === $kind
-             && (int) $old['max_stops'] === $row[8] && (int) $old['min_nights'] === $min && (int) $old['max_nights'] === $max;
+             && (int) $old['max_stops'] === $row[8] && (int) $old['min_nights'] === $min && (int) $old['max_nights'] === $max
+             && (string) $old['airlines'] === $airlines;
         // Always check again after an edit (the dates or filters may have changed what matches).
         q("UPDATE watches SET $cols, scans=?, normal_price=?, scanned_at=NULL, scan_error=NULL WHERE id=?",
           [...$row, $same ? $old['scans'] : 0, $same ? $old['normal_price'] : null, $id]);
@@ -155,8 +175,8 @@ function save_watch(array $in, ?int $id = null): int
         return $id;
     }
     if ((int) q('SELECT COUNT(*) FROM watches')->fetchColumn() >= 25) out(['error' => 'That is a lot of routes. Delete one first (max 25).'], 422);
-    q("INSERT INTO watches(origins,dest,dest_city,dest_country,trip,months,min_nights,max_nights,max_stops,alert,max_price,kind,date_from,date_to,created_at)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [...$row, now()]);
+    q("INSERT INTO watches(origins,dest,dest_city,dest_country,trip,months,min_nights,max_nights,max_stops,alert,max_price,kind,date_from,date_to,airlines,created_at)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [...$row, now()]);
     return (int) db()->lastInsertId();
 }
 
@@ -191,12 +211,14 @@ try {
 
         case 'route':
             $w = watch((int) ($_GET['id'] ?? 0)) ?? out(['error' => 'Route not found.'], 404);
-            out(route_detail($w));
+            out(route_detail($w, air_param()));
 
         case 'fares':
             $w = watch((int) ($_GET['id'] ?? 0)) ?? out(['error' => 'Route not found.'], 404);
             $day = clean_date($_GET['day'] ?? '') ?? out(['error' => 'Bad date'], 422);
-            $rows = q('SELECT * FROM fares WHERE watch_id=? AND last_seen=? AND depart=? ORDER BY price LIMIT 20', [$w['id'], (int) $w['scanned_at'], $day])->fetchAll();
+            $rows = q('SELECT * FROM fares WHERE watch_id=? AND last_seen=? AND depart=? ORDER BY price LIMIT 200', [$w['id'], (int) $w['scanned_at'], $day])->fetchAll();
+            if ($air = air_param()) $rows = array_filter($rows, fn($f) => in_array($f['airline'], $air, true));
+            $rows = array_slice(array_values($rows), 0, 20);
             out(['fares' => array_map(fn($f) => fare_view($f, $w), $rows)]);
 
         case 'save':

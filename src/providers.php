@@ -86,6 +86,11 @@ final class TravelpayoutsProvider implements Provider
         }
         $city = strtoupper((string) ($r['destination'] ?? ''));
         $code = fn($v) => preg_match('/^[A-Z]{3}$/', strtoupper((string) $v)) ? strtoupper((string) $v) : '';
+        // Local departure time of each leg ("2027-01-12T21:30:00+01:00" -> "21:30").
+        $time = fn($v) => preg_match('/T(\d{2}:\d{2})/', (string) $v, $m) ? $m[1] : null;
+        $mins = fn($v) => isset($v) && is_numeric($v) && $v > 0 ? (int) $v : null;
+        $airline = substr(preg_replace('/[^A-Z0-9]/', '', strtoupper((string) ($r['airline'] ?? ''))), 0, 3);
+        $flightNo = preg_replace('/[^0-9A-Z]/', '', strtoupper((string) ($r['flight_number'] ?? '')));
         $dest = $code($r['destination_airport'] ?? '') ?: $code($city);
         $origin = $code($r['origin_airport'] ?? '') ?: $code($r['origin'] ?? '');
         if ($dest === '' || $origin === '') return null;
@@ -98,10 +103,18 @@ final class TravelpayoutsProvider implements Provider
             'ret'       => $ret,
             'nights'    => $ret ? (int) round((strtotime($ret) - strtotime($dep)) / 86400) : null,
             'price'     => (int) round((float) $r['price']),
-            'airline'   => substr(preg_replace('/[^A-Z0-9]/', '', strtoupper((string) ($r['airline'] ?? ''))), 0, 3),
+            'airline'   => $airline,
             'stops'     => max(0, (int) ($r['transfers'] ?? 0), (int) ($r['return_transfers'] ?? 0)),
             'duration'  => isset($r['duration']) ? (int) $r['duration'] : null,
             'link'      => $link,
+            // Per leg (outbound / return), shown in the trip details.
+            'dep_time'   => $time($r['departure_at']),
+            'ret_time'   => $ret ? $time($r['return_at']) : null,
+            'stops_out'  => max(0, (int) ($r['transfers'] ?? 0)),
+            'stops_back' => $ret ? max(0, (int) ($r['return_transfers'] ?? 0)) : null,
+            'dur_out'    => $mins($r['duration_to'] ?? null),
+            'dur_back'   => $ret ? $mins($r['duration_back'] ?? null) : null,
+            'flight_no'  => $airline !== '' && $flightNo !== '' && strlen($flightNo) <= 5 ? $airline . ' ' . $flightNo : null,
         ];
     }
 
@@ -162,11 +175,18 @@ final class DemoProvider implements Provider
             $price = (int) round($base * $season * $noise * $dip * ($stops === 0 ? 1.25 : 1) * ($return ? 1 : 0.62));
             $nights = 6 + $seed % 18;
             $ret = $return ? date('Y-m-d', strtotime("$dep +$nights days")) : null;
+            $airline = self::AIRLINES[$seed % count(self::AIRLINES)];
+            $out1 = 640 + $stops * 170 + $seed % 90;
+            $back = $return ? 660 + $stops * 160 + $seed % 110 : null;
             $out[] = [
                 'origin' => $origin, 'dest' => $dest, 'city' => $dest, 'dest_name' => city_info($dest)[0] ?? $dest,
                 'depart' => $dep, 'ret' => $ret, 'nights' => $return ? $nights : null,
-                'price' => $price, 'airline' => self::AIRLINES[$seed % count(self::AIRLINES)], 'stops' => $stops,
-                'duration' => 700 + $stops * 180 + $seed % 120, 'link' => null,
+                'price' => $price, 'airline' => $airline, 'stops' => $stops,
+                'duration' => $out1 + (int) $back, 'link' => null,
+                'dep_time' => sprintf('%02d:%02d', 6 + $seed % 16, ($seed >> 4) % 12 * 5),
+                'ret_time' => $return ? sprintf('%02d:%02d', 7 + ($seed >> 3) % 15, ($seed >> 6) % 12 * 5) : null,
+                'stops_out' => $stops, 'stops_back' => $return ? max(0, $stops - $seed % 2) : null,
+                'dur_out' => $out1, 'dur_back' => $back, 'flight_no' => $airline . ' ' . (100 + $seed % 800),
             ];
         }
         return $out;

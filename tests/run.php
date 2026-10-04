@@ -48,11 +48,15 @@ check('median', median([5, 1, 3]) === 3 && median([1, 2, 3, 4]) === 3);
 echo "Aviasales response mapping\n";
 $f = TravelpayoutsProvider::normalise(['origin' => 'AMS', 'destination' => 'BKK', 'origin_airport' => 'AMS', 'destination_airport' => 'BKK',
     'price' => 412.6, 'airline' => 'EY', 'flight_number' => '38', 'departure_at' => '2027-01-12T21:30:00+01:00',
-    'return_at' => '2027-01-26T09:10:00+07:00', 'transfers' => 1, 'return_transfers' => 2, 'duration' => 1650,
+    'return_at' => '2027-01-26T09:10:00+07:00', 'transfers' => 1, 'return_transfers' => 2, 'duration' => 1650, 'duration_to' => 790, 'duration_back' => 860,
     'link' => '/search/AMS1201BKK26011?t=EY'], 'm123');
 check('dates, nights, price', $f['depart'] === '2027-01-12' && $f['ret'] === '2027-01-26' && $f['nights'] === 14 && $f['price'] === 413);
 check('stops = worst leg', $f['stops'] === 2);
 check('booking link with marker', $f['link'] === 'https://www.aviasales.com/search/AMS1201BKK26011?t=EY&marker=m123');
+check('trip details per leg', $f['dep_time'] === '21:30' && $f['ret_time'] === '09:10' && $f['stops_out'] === 1 && $f['stops_back'] === 2
+    && $f['dur_out'] === 790 && $f['dur_back'] === 860 && $f['flight_no'] === 'EY 38', json_encode($f));
+$o = TravelpayoutsProvider::normalise(['origin' => 'AMS', 'destination' => 'BCN', 'price' => 80, 'airline' => 'HV', 'flight_number' => '<b>5131</b>', 'departure_at' => '2027-02-01']);
+check('one way without times: no leg 2, junk flight number dropped', $o['dep_time'] === null && $o['stops_back'] === null && $o['dur_back'] === null && $o['flight_no'] === null, json_encode($o));
 check('rows without price are skipped', TravelpayoutsProvider::normalise(['departure_at' => '2027-01-01']) === null);
 
 echo "Scanning and alerts (demo data)\n";
@@ -116,6 +120,14 @@ $cities = q('SELECT DISTINCT dest FROM fares WHERE watch_id=3')->fetchAll(PDO::F
 check('anywhere in Thailand: several cities', $r['ok'] && count($cities) >= 3, implode(',', $cities));
 check('all of them in Thailand', !array_filter($cities, fn($c) => (city_info($c)[1] ?? '') !== 'TH'));
 check('fares carry the city name', (int) q("SELECT COUNT(*) FROM fares WHERE watch_id=3 AND (dest_name IS NULL OR dest_name='')")->fetchColumn() === 0);
+
+echo "Airline filter\n";
+q("INSERT INTO watches(origins,dest,dest_city,trip,months,min_nights,max_nights,max_stops,alert,created_at,airlines) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+  ['AMS', 'BKK', 'Bangkok', 'return', 3, 7, 21, 1, 'great', now(), 'KL,TK']);
+$r = scan_watch(watch(4));
+$al = q('SELECT DISTINCT airline FROM fares WHERE watch_id=4')->fetchAll(PDO::FETCH_COLUMN);
+check('route with airlines keeps only those', $r['ok'] && $al && !array_diff($al, ['KL', 'TK']), implode(',', $al));
+check('fares store leg details', (int) q('SELECT COUNT(*) FROM fares WHERE watch_id=4 AND (dep_time IS NULL OR dur_out IS NULL OR flight_no IS NULL)')->fetchColumn() === 0);
 
 echo "Security helpers\n";
 check('push: Apple accepted', push_host_ok('https://web.push.apple.com/QK1'));

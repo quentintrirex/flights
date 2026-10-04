@@ -25,6 +25,15 @@
     return `${Math.round(s / 86400)} d ago`;
   };
   const originName = (c) => (window.ORIGINS.find((o) => o[0] === c) || [c, c])[1];
+  const placeName = (c) => (window.ORIGINS.find((o) => o[0] === c) || window.PLACES.find((p) => p[0] === c) || [c, ''])[1];
+  const airlineName = (c) => (window.AIRLINES && window.AIRLINES[c]) || c || '';
+  // Airline badge: its code on a colour of its own (no logos from other sites).
+  const airMark = (c) => {
+    if (!c) return '';
+    let h = 0;
+    for (const ch of c) h = (h * 31 + ch.charCodeAt(0)) % 360;
+    return `<span class="al" style="--h:${h}" aria-hidden="true">${esc(c)}</span>`;
+  };
   const placeTitle = (w) => (w.kind === 'country' ? `Anywhere in ${w.city}` : w.city);
   const windowLabel = (w) => (w.dateFrom ? `${day(w.from)} – ${day(w.to)}` : `next ${w.months} ${w.months > 1 ? 'months' : 'month'}`);
   const tripLabel = (w) => (w.trip === 'return' ? `${w.minNights}–${w.maxNights} nights` : 'one way');
@@ -33,11 +42,16 @@
     plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
     plane: '<svg viewBox="0 0 24 24"><path d="M10.5 13.5L3 11l1.5-1.5 8 1 4-4c1-1 2.6-1.2 3.2-.6s.4 2.2-.6 3.2l-4 4 1 8L14.5 22l-2.5-7.5"/></svg>',
     refresh: '<svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg>',
+    clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+    bed: '<svg viewBox="0 0 24 24"><path d="M3 18V7M3 14h18v4M21 14v-2a3 3 0 0 0-3-3h-7v5"/><circle cx="7" cy="11" r="2"/></svg>',
   };
 
   let state = { watches: [], unread: 0, source: '', vapid: '' };
   let lastUnread = null;
   let routeData = null;
+  const fareCache = new Map();          // fare id -> fare, for the trip details sheet
+  let air = { route: 0, codes: [] };    // quick airline filter on the route screen
+  const airQuery = () => (air.codes.length ? '&air=' + air.codes.join(',') : '');
 
   async function api(action, body, params = '') {
     const opt = body ? { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Flights': '1' }, body: JSON.stringify(body) } : {};
@@ -217,25 +231,81 @@
   }
 
   function fareRow(f, country) {
-    return `<div class="fare" data-fare>
-        <div class="d">${weekday(f.depart)} ${day(f.depart)}${f.ret ? ` – ${day(f.ret)}` : ''}</div>
+    fareCache.set(String(f.id), f);
+    const when = `${weekday(f.depart)} ${day(f.depart)}${f.depTime ? ` <span class="t">${esc(f.depTime)}</span>` : ''}${f.ret ? ` – ${weekday(f.ret)} ${day(f.ret)}` : ''}`;
+    return `<button class="fare" data-fare="${+f.id}" aria-label="Trip details">
+        <div class="d">${when}</div>
         <div class="p num">${eur(f.price)}</div>
-        <div class="s">${f.origin} → ${country && f.destName ? esc(f.destName) + ' ' : ''}${f.dest} · ${f.ret ? f.nights + ' nights · ' : ''}${stops(f.stops)}${f.airlineName ? ' · ' + esc(f.airlineName) : ''}</div>
-        <div class="b">${f.isNew ? '<span class="badge new">New</span> ' : ''}${badge(f.level)}</div>
-        <div class="fare-open">
-          ${f.duration ? `<div class="fare-meta">Travel time ${hours(f.duration)}${f.ret ? ' (both ways)' : ''}</div>` : ''}
-          ${safeUrl(f.book) ? `<a class="btn deal small" href="${esc(f.book)}" target="_blank" rel="noopener noreferrer">Book this fare</a>` : ''}
-          <a class="btn small" href="${esc(safeUrl(f.google))}" target="_blank" rel="noopener noreferrer">Check on Google Flights</a>
+        <div class="s">${airMark(f.airline)}<span>${f.airlineName ? esc(f.airlineName) + ' · ' : ''}${f.origin} → ${country && f.destName ? esc(f.destName) + ' ' : ''}${f.dest} · ${f.ret ? f.nights + ' nights · ' : ''}${stops(f.stops)}</span></div>
+        <div class="b">${f.isNew ? '<span class="badge new">New</span> ' : ''}${badge(f.level)}<svg class="go" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></div>
+      </button>`;
+  }
+
+  /* One leg of a trip, as a small timeline: leave, the flight, arrive. */
+  function leg(label, date, time, from, to, airline, flightNo, nStops, mins) {
+    const st = nStops === null || nStops === undefined ? null : nStops;
+    return `<div class="leg">
+      <div class="leg-h"><b>${label}</b><span>${weekday(date)} ${day(date)}</span></div>
+      <div class="tl">
+        <div class="tl-pt"><i></i><div><div class="tl-t">${time ? esc(time) : '<span class="muted">Time on booking site</span>'}</div><div class="tl-p">${esc(placeName(from) || from)} <small>${esc(from)}</small></div></div></div>
+        <div class="tl-mid">
+          <div class="tl-fl">${airMark(airline)}<span>${esc(airlineName(airline)) || 'Airline on booking site'}${flightNo ? ` · <span class="muted">${esc(flightNo)}</span>` : ''}</span></div>
+          <div class="tl-info">${mins ? `<span>${ICON.clock}${hours(mins)}</span>` : ''}${st !== null ? `<span class="${st === 0 ? 'ok' : ''}">${st === 0 ? 'Direct flight' : st === 1 ? '1 stop on the way' : `${st} stops on the way`}</span>` : ''}</div>
         </div>
-      </div>`;
+        <div class="tl-pt end"><i></i><div><div class="tl-p">${esc(placeName(to) || to)} <small>${esc(to)}</small></div></div></div>
+      </div>
+    </div>`;
+  }
+
+  function tripSheet(f) {
+    const w = routeData.watch;
+    const destLabel = f.destName || (w.kind === 'city' ? w.city : f.dest);
+    const back = f.ret ? (f.durBack || null) : null;
+    const total = f.durOut && (back || !f.ret) ? f.durOut + (back || 0) : f.duration;
+    const facts = [
+      ['Price', eur(f.price), 'per person'],
+      f.ret ? ['Away', `${f.nights} nights`, `${day(f.depart)} – ${day(f.ret)}`] : ['Trip', 'One way', day(f.depart)],
+      ['Stops', f.stops === 0 ? 'Direct' : `Max ${f.stops}`, f.ret ? 'each way' : ''],
+      ['Flying time', total ? hours(total) : '–', f.ret && total ? 'there and back' : ''],
+    ];
+    openSheet(`
+      <div class="trip-head">
+        <div><div class="trip-route">${esc(originName(f.origin))} <span class="arrow">${f.ret ? '⇄' : '→'}</span> ${esc(destLabel)}</div>
+        <div class="muted">${f.ret ? 'Return trip' : 'One way'} · ${esc(f.airlineName || airlineName(f.airline) || 'airline on booking site')}</div></div>
+        <div class="trip-price num">${eur(f.price)}${badge(f.level) ? `<div>${badge(f.level)}</div>` : ''}</div>
+      </div>
+      ${leg('Outbound', f.depart, f.depTime, f.origin, f.dest, f.airline, f.flightNo, f.stopsOut ?? (f.ret ? null : f.stops), f.durOut || (f.ret ? null : f.duration))}
+      ${f.ret ? `<div class="stay">${ICON.bed}<span><b>${f.nights} nights</b> in ${esc(destLabel)}</span></div>
+        ${leg('Return', f.ret, f.retTime, f.dest, f.origin, f.airline, null, f.stopsBack, f.durBack)}` : ''}
+      <div class="facts">${facts.map(([l, v, s]) => `<div><span>${l}</span><b class="num">${v}</b>${s ? `<small>${esc(s)}</small>` : ''}</div>`).join('')}</div>
+      <p class="muted small trip-note">${f.depTime ? '' : 'Times show up after the next price check. '}Price for 1 adult in economy, as found by Aviasales users in the last few days. Always confirm on the booking site.</p>
+      <div class="sheet-foot trip-actions">
+        ${safeUrl(f.book) ? `<a class="btn deal block" href="${esc(f.book)}" target="_blank" rel="noopener noreferrer">Book this fare</a>` : ''}
+        <a class="btn block" href="${esc(safeUrl(f.google))}" target="_blank" rel="noopener noreferrer">Check on Google Flights</a>
+      </div>`);
+  }
+
+  /* Quick filter: tap airlines to see only their fares (does not change the route itself). */
+  function airChips(data) {
+    const list = data.airlines || [];
+    if (list.length < 2 && !air.codes.length) return '';
+    const saved = data.watch.airlines.length;
+    return `<div class="air enter">
+      <div class="air-h"><b>Airlines</b><span class="muted">${saved ? 'only the airlines in this route’s settings' : air.codes.length ? `${air.codes.length} selected · <button class="link" data-air="">Show all</button>` : 'tap to filter'}</span></div>
+      <div class="air-row">
+        <button class="ac${air.codes.length ? '' : ' on'}" data-air="">All</button>
+        ${list.map((a) => `<button class="ac${air.codes.includes(a.key) ? ' on' : ''}" data-air="${esc(a.key)}">${airMark(a.key)}<span>${esc(a.name)}</span><em class="num">${eur(a.price)}</em></button>`).join('')}
+      </div>
+    </div>`;
   }
 
   let pollTimer;
   async function route(id, quiet) {
     clearTimeout(pollTimer);
     if (!quiet) view.innerHTML = '<div class="skeleton" style="margin-top:60px"></div><div class="skeleton" style="margin-top:14px;height:220px"></div>';
+    if (air.route !== id) air = { route: id, codes: [] };
     let data;
-    try { data = await api('route', null, `&id=${id}`); } catch (e) { view.innerHTML = `<div class="empty"><h2>Can't load this route</h2><p>${esc(e.message)}</p><a class="btn" href="#/">Back to routes</a></div>`; return; }
+    try { data = await api('route', null, `&id=${id}${airQuery()}`); } catch (e) { view.innerHTML = `<div class="empty"><h2>Can't load this route</h2><p>${esc(e.message)}</p><a class="btn" href="#/">Back to routes</a></div>`; return; }
     if (location.hash !== `#/route/${id}`) return;
     routeData = data;
     const w = data.watch, fares = data.fares, st = data.stats;
@@ -279,13 +349,14 @@
           <span class="tag">${w.trip === 'return' ? 'Return' : 'One way'}</span>${w.trip === 'return' ? `<span class="tag">${w.minNights}–${w.maxNights} nights</span>` : ''}
           <span class="tag">${esc(windowLabel(w))}</span><span class="tag">${w.maxStops < 0 ? 'Any stops' : w.maxStops === 0 ? 'Direct only' : 'Max 1 stop'}</span>
           <span class="tag">Alerts: ${{ extreme: 'extreme only', great: 'great +', good: 'every deal' }[w.alert]}${w.maxPrice ? ` or below ${eur(w.maxPrice)}` : ''}</span>
+          ${w.airlines.length ? `<span class="tag">Only ${esc(w.airlines.map(airlineName).join(', '))}</span>` : ''}
           ${w.paused ? '<span class="tag warn">Paused</span>' : ''}
         </div>
       </div>
 
       <div class="hero enter enter-2">
         ${best ? `
-          <div class="label">Cheapest right now${country && best.destName ? ` · ${esc(best.destName)}` : ''}</div>
+          <div class="label">Cheapest right now${country && best.destName ? ` · ${esc(best.destName)}` : ''}${air.codes.length ? ` · ${esc(air.codes.map(airlineName).join(', '))}` : ''}</div>
           <div class="big num">${eur(best.price)}</div>
           ${ratio ? `<div class="vs ${ratio < 0.97 ? 'below' : ratio > 1.03 ? 'above' : ''}">${ratio < 0.97 ? `${Math.round((1 - ratio) * 100)}% below normal` : ratio > 1.03 ? `${Math.round((ratio - 1) * 100)}% above normal` : 'About the normal price'}</div>` : ''}
           <div class="hero-sub">${weekday(best.depart)} ${day(best.depart)}${best.ret ? ` – ${day(best.ret)} · ${best.nights} nights` : ''} · ${stops(best.stops)}${best.airlineName ? ' · ' + esc(best.airlineName) : ''} &nbsp;${badge(best.level)}</div>
@@ -295,9 +366,13 @@
             ${safeUrl(best.book) ? `<a class="btn deal" href="${esc(best.book)}" target="_blank" rel="noopener noreferrer">Book this fare</a>` : ''}
             <a class="btn" href="${esc(safeUrl(best.google))}" target="_blank" rel="noopener noreferrer">Google Flights</a>
           </div>`
-        : `<div class="label">${w.error ? esc(w.error) : 'No fares match right now'}</div><p class="muted">Try more nights, more airports, a longer window or allow stops.</p>`}
+        : air.codes.length
+          ? `<div class="label">No fares from ${esc(air.codes.map(airlineName).join(', '))} right now</div><p class="muted"><button class="link" data-air="">Show all airlines</button></p>`
+          : `<div class="label">${w.error ? esc(w.error) : 'No fares match right now'}</div><p class="muted">Try more nights, more airports, a longer window or allow stops${w.airlines.length ? ', or more airlines' : ''}.</p>`}
       </div>
       <p class="muted small-print enter enter-3">Checked ${ago(w.scannedAt)} · ${data.total} matching fares · prices Aviasales users found in the last few days. Always confirm the price before you book.</p>
+
+      ${airChips(data)}
 
       <div class="tiles enter">${tiles.map(([l, v, s]) => `<div class="tile"><div class="tl">${l}</div><div class="tv num">${v}</div><div class="ts">${s}</div></div>`).join('')}</div>
 
@@ -322,7 +397,6 @@
         ${country ? bars(data.byCity, 'Cheapest per city') : ''}
         ${bars(data.byOrigin, 'Cheapest per departure airport', (r) => `${esc(originName(r.key))} <small>${esc(r.key)}</small>`)}
         ${bars(data.byWeekday, 'Cheapest day of the week to leave')}
-        ${bars(data.byAirline, 'Airlines', (r) => esc(r.name))}
         ${bars(data.byStops, 'Direct or with stops')}
       </div>
 
@@ -345,7 +419,7 @@
     const list = $('#fares');
     list.classList.add('loading');
     try {
-      const r = await api('fares', null, `&id=${w.id}&day=${dayKey}`);
+      const r = await api('fares', null, `&id=${w.id}&day=${dayKey}${airQuery()}`);
       $('#fares-title').innerHTML = `Leaving ${weekday(dayKey)} ${day(dayKey)} <button class="link" data-allfares>Show best dates</button>`;
       list.innerHTML = r.fares.map((f) => fareRow(f, w.kind === 'country')).join('') || '<p class="muted pad">No fares that day.</p>';
       if ($('[data-more]')) $('[data-more]').hidden = true;
@@ -385,7 +459,11 @@
 
   function editSheet(w) {
     const today = new Date().toISOString().slice(0, 10);
-    const f = w ? { ...w } : { kind: 'city', origins: ['AMS', 'EIN', 'RTM'], dest: '', city: '', country: '', trip: 'return', months: 3, dateFrom: null, dateTo: null, minNights: 7, maxNights: 21, maxStops: 1, alert: 'great', maxPrice: null };
+    const f = w ? { ...w } : { kind: 'city', origins: ['AMS', 'EIN', 'RTM'], dest: '', city: '', country: '', trip: 'return', months: 3, dateFrom: null, dateTo: null, minNights: 7, maxNights: 21, maxStops: 1, alert: 'great', maxPrice: null, airlines: [] };
+    f.airlines = [...(f.airlines || [])];
+    // Airlines to offer as chips: the chosen ones, the ones seen on this route, then a few common ones.
+    const seen = w && routeData && routeData.watch.id === w.id ? (routeData.airlines || []).map((a) => a.key) : [];
+    let airOffer = [...new Set([...f.airlines, ...seen.slice(0, 8), 'KL', 'HV', 'TK', 'EK', 'QR', 'EY', 'LH', 'AF'])].slice(0, 14);
     let when = f.dateFrom ? 'custom' : String(f.months);
     const seg = (name, opts, val) => `<div class="seg" data-seg="${name}">${opts.map(([v, l]) => `<button type="button" data-v="${v}" class="${String(v) === String(val) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
     openSheet(`
@@ -402,6 +480,9 @@
           <label class="inl"><span>Latest</span><input class="input" type="date" id="dTo" min="${today}" value="${f.dateTo || ''}"></label></div>
         <div class="hint" id="when-hint">${when === 'custom' ? 'Departure between these dates.' : 'Departure any day from today until then.'}</div></div>
       <div class="field"><span class="lbl">Stops</span>${seg('maxStops', [[0, 'Direct'], [1, 'Max 1'], [-1, 'Any']], f.maxStops)}</div>
+      <div class="field"><span class="lbl">Airlines</span><div class="chips" id="airl"></div>
+        <div class="air-add"><input class="input" id="air-q" placeholder="Add another airline…" autocomplete="off"><div class="suggest" hidden></div></div>
+        <div class="hint" id="air-hint"></div></div>
       <div class="field"><span class="lbl">Notify me about</span>${seg('alert', [['extreme', 'Only extreme'], ['great', 'Great +'], ['good', 'Every deal']], f.alert)}
         <div class="hint">Extreme = 45% or more under the normal price. Great = 30%. Good = 15%.</div>
         <input class="input" style="margin-top:10px" type="number" inputmode="numeric" id="maxPrice" placeholder="And always below € (optional), e.g. 450" value="${f.maxPrice || ''}"></div>
@@ -444,6 +525,42 @@
       };
       renderDest();
 
+      // Airlines: none picked = any airline; otherwise only fares from the picked ones count.
+      const airBox = $('#airl', sheet), airHint = $('#air-hint', sheet);
+      const renderAir = () => {
+        airBox.innerHTML = `<button type="button" class="chip${f.airlines.length ? '' : ' on'}" data-al="">Any airline</button>`
+          + airOffer.map((c) => `<button type="button" class="chip chip-al${f.airlines.includes(c) ? ' on' : ''}" data-al="${esc(c)}">${airMark(c)}${esc(airlineName(c))}</button>`).join('');
+        airHint.textContent = f.airlines.length
+          ? `Only ${f.airlines.map(airlineName).join(', ')}. Prices, the normal price and alerts all use just ${f.airlines.length > 1 ? 'these airlines' : 'this airline'}.`
+          : 'Every airline counts. Pick one or more to track only those.';
+      };
+      airBox.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-al]');
+        if (!b) return;
+        const c = b.dataset.al;
+        if (!c) f.airlines = [];
+        else if (f.airlines.includes(c)) f.airlines = f.airlines.filter((x) => x !== c);
+        else if (f.airlines.length >= 12) return toast('At most 12 airlines');
+        else f.airlines = [...f.airlines, c];
+        renderAir();
+      });
+      const airQ = $('#air-q', sheet), airSug = $('.air-add .suggest', sheet);
+      const addAir = (c) => {
+        if (!airOffer.includes(c)) airOffer = [...airOffer, c];
+        if (!f.airlines.includes(c) && f.airlines.length < 12) f.airlines = [...f.airlines, c];
+        airQ.value = ''; airSug.hidden = true; renderAir();
+      };
+      airQ.oninput = () => {
+        const t = airQ.value.trim().toLowerCase();
+        const hits = t.length < 2 ? [] : Object.entries(window.AIRLINES || {})
+          .filter(([c, n]) => n.toLowerCase().includes(t) || c.toLowerCase() === t).slice(0, 6);
+        airSug.hidden = !hits.length;
+        airSug.innerHTML = hits.map(([c, n]) => `<button type="button" data-add-al="${esc(c)}"><span>${airMark(c)} ${esc(n)}</span><span class="code">${esc(c)}</span></button>`).join('');
+      };
+      airSug.addEventListener('pointerdown', (e) => { const b = e.target.closest('[data-add-al]'); if (b) { e.preventDefault(); addAir(b.dataset.addAl); } });
+      airQ.onkeydown = (e) => { if (e.key === 'Enter') { const b = $('[data-add-al]', airSug); if (b) { e.preventDefault(); addAir(b.dataset.addAl); } } };
+      renderAir();
+
       $$('[data-o]', sheet).forEach((b) => (b.onclick = () => {
         b.classList.toggle('on');
         f.origins = $$('[data-o].on', sheet).map((x) => x.dataset.o);
@@ -474,7 +591,7 @@
         btn.disabled = true;
         btn.innerHTML = '<span class="spin"></span> Saving…';
         try {
-          const body = { kind: f.kind, origins: f.origins, dest: f.dest, city: f.city, country: f.country, trip: f.trip, months: f.months, dateFrom: f.dateFrom, dateTo: f.dateTo, minNights: f.minNights, maxNights: f.maxNights, maxStops: f.maxStops, alert: f.alert, maxPrice: f.maxPrice };
+          const body = { kind: f.kind, origins: f.origins, dest: f.dest, city: f.city, country: f.country, trip: f.trip, months: f.months, dateFrom: f.dateFrom, dateTo: f.dateTo, minNights: f.minNights, maxNights: f.maxNights, maxStops: f.maxStops, alert: f.alert, maxPrice: f.maxPrice, airlines: f.airlines };
           const r = await api('save', w ? { ...body, id: w.id } : body);
           closeSheet();
           await refresh();
@@ -560,13 +677,19 @@
   }
 
   document.addEventListener('click', async (e) => {
-    const t = e.target.closest('[data-more],[data-add],[data-edit],[data-scan],[data-pause],[data-delete],[data-fare],[data-back],[data-month],[data-day],[data-range] button,[data-allfares]');
+    const t = e.target.closest('[data-more],[data-add],[data-edit],[data-scan],[data-pause],[data-delete],[data-fare],[data-back],[data-month],[data-day],[data-range] button,[data-allfares],[data-air]');
     if (!t) return;
     if (t.matches('[data-fare]')) {
-      if (e.target.closest('a')) return;
-      const open = t.classList.contains('open');
-      $$('.fare.open').forEach((x) => x.classList.remove('open'));
-      t.classList.toggle('open', !open);
+      const f = fareCache.get(t.dataset.fare);
+      if (f) tripSheet(f);
+      return;
+    }
+    if (t.matches('[data-air]')) {
+      const c = t.dataset.air;
+      air.codes = !c ? [] : air.codes.includes(c) ? air.codes.filter((x) => x !== c) : [...air.codes, c];
+      const y = scrollY;
+      await route(routeData.watch.id, true);
+      window.scrollTo(0, y);
       return;
     }
     if (t.matches('[data-more]')) {

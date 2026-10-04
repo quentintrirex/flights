@@ -62,8 +62,9 @@ function db(): PDO
     SQL);
     // Upgrades for databases made by an earlier version (never drops data).
     $add = [
-        'watches' => ['kind' => "TEXT NOT NULL DEFAULT 'city'", 'date_from' => 'TEXT', 'date_to' => 'TEXT'],
-        'fares'   => ['dest_name' => 'TEXT'],
+        'watches' => ['kind' => "TEXT NOT NULL DEFAULT 'city'", 'date_from' => 'TEXT', 'date_to' => 'TEXT', 'airlines' => "TEXT NOT NULL DEFAULT ''"],
+        'fares'   => ['dest_name' => 'TEXT', 'dep_time' => 'TEXT', 'ret_time' => 'TEXT', 'stops_out' => 'INTEGER', 'stops_back' => 'INTEGER',
+                      'dur_out' => 'INTEGER', 'dur_back' => 'INTEGER', 'flight_no' => 'TEXT'],
         'history' => ['fares' => 'INTEGER'],
         'alerts'  => ['price' => 'INTEGER'],
     ];
@@ -191,6 +192,7 @@ function scan_watch(array $w, ?Provider $p = null): array
     $t = now();
     [$from, $to] = window_of($w);
     $country = $w['kind'] === 'country';
+    $airlines = array_filter(explode(',', (string) ($w['airlines'] ?? '')));   // empty = any airline
     $found = [];
     $errors = [];
     foreach (explode(',', $w['origins']) as $origin) {
@@ -204,6 +206,7 @@ function scan_watch(array $w, ?Provider $p = null): array
                     if ($w['max_stops'] >= 0 && $f['stops'] > $w['max_stops']) continue;
                     if ($w['trip'] === 'return' && (!$f['ret'] || $f['nights'] < $w['min_nights'] || $f['nights'] > $w['max_nights'])) continue;
                     if ($w['trip'] === 'oneway' && $f['ret']) continue;
+                    if ($airlines && !in_array($f['airline'], $airlines, true)) continue;
                     $k = $f['origin'] . $f['dest'] . $f['depart'] . ($f['ret'] ?? '') . $f['airline'];
                     if (!isset($found[$k]) || $f['price'] < $found[$k]['price']) $found[$k] = $f + ['k' => $k];
                 }
@@ -238,13 +241,18 @@ function scan_watch(array $w, ?Provider $p = null): array
                   [$w['id'], date('Y-m-d', $t - 30 * 86400)])->fetchAll(PDO::FETCH_COLUMN);
         $normal = count($hist) >= 3 ? median(array_map('intval', $hist)) : ($scanNormal ?? ($w['normal_price'] ? (int) $w['normal_price'] : null));
 
-        $up = $db->prepare('INSERT INTO fares(watch_id,k,origin,dest,dest_name,depart,ret,nights,price,airline,stops,duration,link,first_seen,last_seen)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        $up = $db->prepare('INSERT INTO fares(watch_id,k,origin,dest,dest_name,depart,ret,nights,price,airline,stops,duration,link,first_seen,last_seen,
+                dep_time,ret_time,stops_out,stops_back,dur_out,dur_back,flight_no)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(watch_id,k) DO UPDATE SET price=excluded.price, stops=excluded.stops, duration=excluded.duration,
-            link=excluded.link, dest_name=excluded.dest_name, last_seen=excluded.last_seen');
+            link=excluded.link, dest_name=excluded.dest_name, last_seen=excluded.last_seen,
+            dep_time=excluded.dep_time, ret_time=excluded.ret_time, stops_out=excluded.stops_out, stops_back=excluded.stops_back,
+            dur_out=excluded.dur_out, dur_back=excluded.dur_back, flight_no=excluded.flight_no');
         foreach ($found as $f) {
             $up->execute([$w['id'], $f['k'], $f['origin'], $f['dest'], $f['dest_name'] ?? null, $f['depart'], $f['ret'], $f['nights'],
-                          $f['price'], $f['airline'], $f['stops'], $f['duration'], $f['link'], $t, $t]);
+                          $f['price'], $f['airline'], $f['stops'], $f['duration'], $f['link'], $t, $t,
+                          $f['dep_time'] ?? null, $f['ret_time'] ?? null, $f['stops_out'] ?? null, $f['stops_back'] ?? null,
+                          $f['dur_out'] ?? null, $f['dur_back'] ?? null, $f['flight_no'] ?? null]);
         }
         q('UPDATE watches SET scanned_at=?, scan_error=?, normal_price=?, low_price=?, scans=scans+1 WHERE id=?',
           [$t, $errors ? $errors[0] : null, $normal, $low, $w['id']]);
@@ -334,6 +342,23 @@ const AIRLINES = [
     'XQ' => 'SunExpress', 'OR' => 'TUI fly', 'CA' => 'Air China', 'MU' => 'China Eastern', 'CZ' => 'China Southern',
     'PR' => 'Philippine Airlines', 'FD' => 'Thai AirAsia', 'AK' => 'AirAsia', 'D7' => 'AirAsia X', 'TR' => 'Scoot', 'VS' => 'Virgin Atlantic',
     'PY' => 'Surinam Airways', 'LA' => 'LATAM', 'AV' => 'Avianca', 'CM' => 'Copa', 'AM' => 'Aeroméxico', 'G3' => 'GOL', 'AD' => 'Azul',
+    'MF' => 'Xiamen Airlines', '6E' => 'IndiGo', 'HU' => 'Hainan Airlines', '3U' => 'Sichuan Airlines', 'ZH' => 'Shenzhen Airlines',
+    'HX' => 'Hong Kong Airlines', 'UO' => 'HK Express', 'FZ' => 'flydubai', 'G9' => 'Air Arabia', 'J9' => 'Jazeera Airways',
+    'KU' => 'Kuwait Airways', 'RJ' => 'Royal Jordanian', 'ME' => 'Middle East Airlines', 'PK' => 'PIA', 'BG' => 'Biman',
+    'QF' => 'Qantas', 'NZ' => 'Air New Zealand', 'VA' => 'Virgin Australia', 'JQ' => 'Jetstar', '5J' => 'Cebu Pacific',
+    'VJ' => 'VietJet', 'QH' => 'Bamboo Airways', 'PG' => 'Bangkok Airways', 'SL' => 'Thai Lion Air', 'DD' => 'Nok Air',
+    'OD' => 'Batik Air Malaysia', 'ID' => 'Batik Air', 'JT' => 'Lion Air', 'BI' => 'Royal Brunei', 'KC' => 'Air Astana',
+    'HY' => 'Uzbekistan Airways', 'J2' => 'AZAL', 'PS' => 'UIA', 'A9' => 'Georgian Airways', 'A3' => 'Aegean', 'OA' => 'Olympic Air',
+    'RO' => 'TAROM', 'FB' => 'Bulgaria Air', 'JU' => 'Air Serbia', 'OU' => 'Croatia Airlines', 'BT' => 'airBaltic', 'EW' => 'Eurowings',
+    'DE' => 'Condor', 'X3' => 'TUIfly', 'BY' => 'TUI Airways', 'LS' => 'Jet2', 'EI' => 'Aer Lingus', 'DY' => 'Norwegian',
+    'D8' => 'Norwegian', 'FI' => 'Icelandair', 'UX' => 'Air Europa', 'I2' => 'Iberia Express', 'V7' => 'Volotea', 'NT' => 'Binter',
+    'TO' => 'Transavia France', 'AT' => 'Royal Air Maroc', 'TU' => 'Tunisair', 'AH' => 'Air Algérie', 'SA' => 'South African',
+    'WB' => 'RwandAir', 'B6' => 'JetBlue', 'AS' => 'Alaska Airlines', 'WN' => 'Southwest', 'TS' => 'Air Transat', 'LG' => 'Luxair',
+    'SN' => 'Brussels Airlines', 'EN' => 'Air Dolomiti', 'WK' => 'Edelweiss', '4Y' => 'Discover Airlines', 'GQ' => 'Sky Express',
+    'TB' => 'TUI fly Belgium', 'HO' => 'Juneyao Air', 'FM' => 'Shanghai Airlines', 'SC' => 'Shandong Airlines', 'MM' => 'Peach',
+    'GK' => 'Jetstar Japan', '7C' => 'Jeju Air', 'TW' => "T'way Air", 'LJ' => 'Jin Air', 'IT' => 'Tigerair Taiwan', 'Z2' => 'AirAsia Philippines',
+    'QZ' => 'Indonesia AirAsia', 'IX' => 'Air India Express', 'SG' => 'SpiceJet', 'QP' => 'Akasa Air', 'XY' => 'flynas', 'F3' => 'flyadeal',
+    'MK' => 'Air Mauritius', 'HM' => 'Air Seychelles', 'TC' => 'Air Tanzania', 'ER' => 'SereneAir', '8M' => 'Myanmar Airways', 'K6' => 'Cambodia Angkor Air',
 ];
 
 function airline_name(?string $code): string { return $code ? (AIRLINES[$code] ?? $code) : ''; }
