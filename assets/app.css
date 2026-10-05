@@ -772,3 +772,75 @@ body { background: var(--bg); color: var(--ink); }
 .band.big .band-to .cc { font-size: 18px; }
 .band-from .cc + .cc { margin-left: -2px; }
 .stats span .cc { height: 14px; font-size: 8.5px; }
+
+/* Airline logos: a small rounded square; the code badge underneath shows until (or unless) it loads */
+.al { position: relative; overflow: hidden; }
+.al.has-logo { width: 24px; min-width: 24px; height: 24px; padding: 0; border-radius: 7px; box-shadow: inset 0 0 0 1px rgba(15,29,58,.06); }
+.al.has-logo b { font-size: 8.5px; }
+.al-logo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .25s ease; }
+.al.logo-in { background: #fff; }
+.al.logo-in .al-logo { opacity: 1; }
+.al.logo-in b { visibility: hidden; }
+.al-row .al.has-logo { width: 30px; min-width: 30px; height: 30px; border-radius: 9px; }
+.best-al .al.has-logo, .dh-trip .al.has-logo { width: 28px; min-width: 28px; height: 28px; border-radius: 8px; }
+
+/* ---------- When: range calendar ---------- */
+.seg button svg, .rc-arrow svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vertical-align: -3px; margin-right: 6px; }
+.rc { margin-top: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 18px; background: #fff; }
+.rc-sum { display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 12px; border-radius: 14px;
+  background: linear-gradient(135deg, #eef4ff 0%, #f3f5f9 100%); }
+.rc-d { display: flex; flex-direction: column; min-width: 0; }
+.rc-d small { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); }
+.rc-d b { font-size: 15px; font-weight: 700; white-space: nowrap; }
+.rc-d b.ph { color: var(--ink-3); font-weight: 600; }
+.rc-arrow { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: #fff; color: #2563eb; flex: none; }
+.rc-arrow svg { margin: 0; transform: rotate(45deg); }
+.rc-len { margin-left: auto; padding: 4px 10px; border-radius: 999px; background: var(--ink); color: #fff; font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+.rc-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.rc-head b { font-size: 15px; }
+.rc-nav { width: 34px; height: 34px; border: 0; border-radius: 10px; background: var(--surface); display: grid; place-items: center; color: var(--ink); }
+.rc-nav svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.rc-nav.fwd svg { transform: scaleX(-1); }
+.rc-nav:disabled { opacity: .3; }
+.rc-dow, .rc-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+.rc-dow span { text-align: center; font-size: 11px; font-weight: 600; color: var(--ink-3); padding: 4px 0; }
+.rc-grid { row-gap: 3px; }
+.rc-grid button { position: relative; height: 38px; border: 0; background: transparent; font: inherit; font-size: 14px; font-weight: 550; color: var(--ink); font-variant-numeric: tabular-nums; z-index: 0; }
+.rc-grid button::before { content: ""; position: absolute; inset: 2px; border-radius: 11px; z-index: -1; transition: background .15s; }
+.rc-grid button:hover:not(:disabled)::before { background: var(--surface); }
+.rc-grid button.off { color: #c4c9d4; }
+.rc-grid button.today { color: #2563eb; font-weight: 750; }
+.rc-grid button.in { background: #eaf1ff; }
+.rc-grid button.start, .rc-grid button.end { color: #fff; font-weight: 750; }
+.rc-grid button.start::before, .rc-grid button.end::before { background: #2563eb !important; box-shadow: 0 4px 12px rgba(37,99,235,.3); }
+.rc-grid button.start:has(~ .in), .rc-grid button.start:has(~ .end) { background: linear-gradient(90deg, transparent 50%, #eaf1ff 50%); }
+.rc-grid button.end { background: linear-gradient(90deg, #eaf1ff 50%, transparent 50%); }
+.rc-grid button.end.start { background: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .rc-grid button.start::before, .rc-grid button.end::before { animation: rcpop .25s ease; }
+  @keyframes rcpop { from { transform: scale(.7); } }
+}
+#when { margin-top: 12px; }
+.hint.warn { color: var(--off); font-weight: 600; }
+
+/* ---------- Trip length: dual slider ---------- */
+.tl-box { padding: 14px 16px 12px; border: 1px solid var(--line); border-radius: 18px; }
+.tl-val { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.tl-val b { font-size: 24px; font-weight: 750; letter-spacing: -.02em; }
+.tl-val span { font-size: 13.5px; color: var(--ink-3); }
+.dual { position: relative; height: 36px; margin: 6px 0 8px; }
+.dual-track { position: absolute; left: 0; right: 0; top: 50%; height: 6px; margin-top: -3px; border-radius: 3px; background: var(--surface); }
+.dual-track i { position: absolute; top: 0; bottom: 0; border-radius: 3px; background: linear-gradient(90deg, #60a5fa, #2563eb); }
+.dual input { position: absolute; inset: 0; width: 100%; margin: 0; background: none; pointer-events: none; -webkit-appearance: none; appearance: none; height: 36px; }
+.dual input::-webkit-slider-runnable-track { background: none; height: 36px; }
+.dual input::-moz-range-track { background: none; }
+.dual input::-webkit-slider-thumb { -webkit-appearance: none; pointer-events: auto; width: 28px; height: 28px; margin-top: 4px; border-radius: 50%; background: #fff; border: 0;
+  box-shadow: 0 2px 8px rgba(15,29,58,.22), 0 0 0 1px rgba(15,29,58,.06); cursor: grab; }
+.dual input::-moz-range-thumb { pointer-events: auto; width: 28px; height: 28px; border-radius: 50%; background: #fff; border: 0; box-shadow: 0 2px 8px rgba(15,29,58,.22); cursor: grab; }
+.dual input:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px rgba(37,99,235,.25), 0 2px 8px rgba(15,29,58,.22); }
+.tl-presets { gap: 6px; }
+.tl-presets .chip { height: 32px; font-size: 13px; }
+
+/* Airline logo inside the small trip chips */
+.ct .al.has-logo { width: 18px; min-width: 18px; height: 18px; border-radius: 5px; }
+.ct .al:not(.has-logo) { height: 16px; min-width: 22px; font-size: 9px; }

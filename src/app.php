@@ -206,6 +206,8 @@ function scan_watch(array $w, ?Provider $p = null): array
                     if ($w['max_stops'] >= 0 && $f['stops'] > $w['max_stops']) continue;
                     if ($w['trip'] === 'return' && (!$f['ret'] || $f['nights'] < $w['min_nights'] || $f['nights'] > $w['max_nights'])) continue;
                     if ($w['trip'] === 'oneway' && $f['ret']) continue;
+                    // Picked dates are a travel window: a return trip has to be home by the last day too.
+                    if ($w['trip'] === 'return' && $w['date_to'] && $f['ret'] > $w['date_to']) continue;
                     if ($airlines && !in_array($f['airline'], $airlines, true)) continue;
                     $k = $f['origin'] . $f['dest'] . $f['depart'] . ($f['ret'] ?? '') . $f['airline'];
                     if (!isset($found[$k]) || $f['price'] < $found[$k]['price']) $found[$k] = $f + ['k' => $k];

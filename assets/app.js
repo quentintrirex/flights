@@ -27,16 +27,28 @@
   const originName = (c) => (window.ORIGINS.find((o) => o[0] === c) || [c, c])[1];
   const placeName = (c) => (window.ORIGINS.find((o) => o[0] === c) || window.PLACES.find((p) => p[0] === c) || [c, ''])[1];
   const airlineName = (c) => (window.AIRLINES && window.AIRLINES[c]) || c || '';
-  // Airline badge: its code on a colour of its own (no logos from other sites).
+  // Airline badge: the airline's logo (served and cached by our own logo.php), with its code on a
+  // colour of its own underneath, which shows if there is no logo.
   const airMark = (c) => {
     if (!c) return '';
     let h = 0;
     for (const ch of c) h = (h * 31 + ch.charCodeAt(0)) % 360;
-    return `<span class="al" style="--h:${h}" aria-hidden="true">${esc(c)}</span>`;
+    const logo = /^[A-Z0-9]{2}$/.test(c) ? `<img class="al-logo" src="logo.php?c=${c}" alt="" loading="lazy" decoding="async">` : '';
+    return `<span class="al${logo ? ' has-logo' : ''}" style="--h:${h}" aria-hidden="true"><b>${esc(c)}</b>${logo}</span>`;
   };
+  // A logo that fails to load is removed, so the code badge shows (no inline handlers: CSP).
+  document.addEventListener('error', (e) => {
+    const t = e.target;
+    if (t && t.classList && t.classList.contains('al-logo')) { t.parentNode.classList.remove('has-logo'); t.remove(); }
+  }, true);
+  document.addEventListener('load', (e) => {
+    const t = e.target;
+    if (t && t.classList && t.classList.contains('al-logo')) t.parentNode.classList.add('logo-in');
+  }, true);
   const placeTitle = (w) => (w.kind === 'country' ? `Anywhere in ${w.city}` : w.city);
   const windowLabel = (w) => (w.dateFrom ? `${day(w.from)} – ${day(w.to)}` : `next ${w.months} ${w.months > 1 ? 'months' : 'month'}`);
-  const tripLabel = (w) => (w.trip === 'return' ? `${w.minNights}–${w.maxNights} nights` : 'one way');
+  const nightsLabel = (w) => (w.minNights === w.maxNights ? `${w.minNights}` : `${w.minNights}–${w.maxNights >= 45 ? "45+" : w.maxNights}`) + " nights";
+  const tripLabel = (w) => (w.trip === "return" ? nightsLabel(w) : "one way");
   const ICON = {
     back: '<svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>',
     plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
@@ -161,7 +173,7 @@
     const chips = [
       `${IC.cal}<span>${w.kind === 'country' && b.destName ? `<b>${esc(b.destName)}</b> · ` : ''}${day(b.depart)}${b.ret ? ` – ${day(b.ret)}` : ''}</span>`,
       b.ret ? `${IC.moon}<span>${b.nights} ${b.nights === 1 ? 'night' : 'nights'}</span>` : '',
-      b.airlineName ? `${IC.plane}<span>${esc(b.airlineName)}</span>` : '',
+      b.airlineName ? `${b.airline ? airMark(b.airline) : IC.plane}<span>${esc(b.airlineName)}</span>` : '',
       `${b.stops === 0 ? IC.direct : IC.stops}<span>${b.stops === 0 ? 'Direct' : b.stops === 1 ? '1 stop' : `${b.stops} stops`}</span>`,
     ].filter(Boolean);
     return `<div class="chips-trip">${chips.map((c) => `<span class="ct">${c}</span>`).join('')}</div>`;
@@ -232,7 +244,7 @@
   }
 
   function routeCard(w, i) {
-    const meta = `${w.trip === 'return' ? 'Return' : 'One way'}${w.trip === 'return' ? ` · ${w.minNights}–${w.maxNights} nights` : ''} · ${windowLabel(w)}${w.maxStops === 0 ? ' · direct only' : ''}`;
+    const meta = `${w.trip === 'return' ? 'Return' : 'One way'}${w.trip === 'return' ? ` · ${nightsLabel(w)}` : ''} · ${windowLabel(w)}${w.maxStops === 0 ? ' · direct only' : ''}`;
     const price = w.low
       ? `<div class="p num">${eur(w.low)}</div><div class="n">${w.trip === 'return' ? 'return' : 'one way'} · per person</div>`
       : `<div class="n">${w.error ? 'Check failed' : w.scannedAt ? 'No fares right now' : 'Checking…'}</div>`;
@@ -531,7 +543,7 @@
     let tab = 'dates';
     try { tab = sessionStorage.getItem('fl-tab') || 'dates'; } catch { /* private mode */ }
     if (best) fareCache.set(String(best.id), best);
-    const meta = [w.trip === 'return' ? `Return · ${w.minNights}–${w.maxNights} nights` : 'One way', windowLabel(w),
+    const meta = [w.trip === 'return' ? `Return · ${nightsLabel(w)}` : 'One way', windowLabel(w),
       w.maxStops < 0 ? 'any stops' : w.maxStops === 0 ? 'direct only' : 'max 1 stop'].join(' · ');
     const vsCls = ratio ? (ratio < 0.97 ? 'below' : ratio > 1.03 ? 'above' : '') : '';
     const vsTxt = ratio ? (ratio < 0.97 ? `${Math.round((1 - ratio) * 100)}% below usual` : ratio > 1.03 ? `${Math.round((ratio - 1) * 100)}% above usual` : 'About the normal price') : '';
@@ -676,14 +688,25 @@
       <div class="field"><span class="lbl">From</span><div class="chips" id="origins">${window.ORIGINS.map(([c, n]) => `<button type="button" class="chip${f.origins.includes(c) ? ' on' : ''}" data-o="${c}">${n}<small>${c}</small></button>`).join('')}</div></div>
       <div class="field"><label for="dest">To</label><div id="dest-box"></div><div class="hint">A city, an airport, or a whole country (e.g. Thailand).</div></div>
       <div class="field"><span class="lbl">Trip</span>${seg('trip', [['return', 'Return'], ['oneway', 'One way']], f.trip)}</div>
-      <div class="field" id="nights-field" ${f.trip === 'oneway' ? 'hidden' : ''}><span class="lbl">Nights away</span>
-        <div class="row2"><label class="inl"><span>From</span><input class="input" type="number" inputmode="numeric" id="minN" min="1" max="60" value="${f.minNights}"></label><label class="inl"><span>To</span><input class="input" type="number" inputmode="numeric" id="maxN" min="1" max="90" value="${f.maxNights}"></label></div></div>
-      <div class="field"><span class="lbl">Leaving</span>
-        <div class="chips" id="when">${[['1', 'Within 1 month'], ['2', '2 months'], ['3', '3 months'], ['6', '6 months'], ['12', '12 months'], ['custom', 'Pick dates']].map(([v, l]) => `<button type="button" class="chip${when === v ? ' on' : ''}" data-w="${v}">${l}</button>`).join('')}</div>
-        <div class="row2" id="dates" ${when === 'custom' ? '' : 'hidden'} style="margin-top:10px">
-          <label class="inl"><span>Earliest</span><input class="input" type="date" id="dFrom" min="${today}" value="${f.dateFrom || today}"></label>
-          <label class="inl"><span>Latest</span><input class="input" type="date" id="dTo" min="${today}" value="${f.dateTo || ''}"></label></div>
-        <div class="hint" id="when-hint">${when === 'custom' ? 'Departure between these dates.' : 'Departure any day from today until then.'}</div></div>
+      <div class="field when-field"><span class="lbl">When</span>
+        <div class="seg" id="when-mode"><button type="button" data-wm="custom" class="${when === 'custom' ? 'on' : ''}">${IC.cal}Date range</button><button type="button" data-wm="flex" class="${when !== 'custom' ? 'on' : ''}">${IC.moon}Flexible</button></div>
+        <div class="rc" id="dates" ${when === 'custom' ? '' : 'hidden'}>
+          <div class="rc-sum" id="rc-sum"></div>
+          <div class="rc-head"><button type="button" class="rc-nav" data-cal="-1" aria-label="Previous month">${ICON.back}</button><b id="rc-title"></b><button type="button" class="rc-nav fwd" data-cal="1" aria-label="Next month">${ICON.back}</button></div>
+          <div class="rc-dow">${['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d) => `<span>${d}</span>`).join('')}</div>
+          <div class="rc-grid" id="rc-grid"></div>
+          <input type="hidden" id="dFrom" value="${f.dateFrom || ''}"><input type="hidden" id="dTo" value="${f.dateTo || ''}">
+        </div>
+        <div class="chips" id="when" ${when === 'custom' ? 'hidden' : ''}>${[['1', 'Within 1 month'], ['2', '2 months'], ['3', '3 months'], ['6', '6 months'], ['12', '12 months']].map(([v, l]) => `<button type="button" class="chip${when === v || (when === 'custom' && v === '3') ? ' on' : ''}" data-w="${v}">${l}</button>`).join('')}</div>
+        <div class="hint" id="when-hint"></div></div>
+      <div class="field" id="nights-field" ${f.trip === 'oneway' ? 'hidden' : ''}><span class="lbl">Trip length</span>
+        <div class="tl-box">
+          <div class="tl-val"><b id="tl-val"></b><span id="tl-sub"></span></div>
+          <div class="dual" id="dual"><div class="dual-track"><i id="dual-fill"></i></div>
+            <input type="range" id="minN" min="1" max="45" step="1" value="${Math.min(45, f.minNights)}" aria-label="Shortest trip in nights">
+            <input type="range" id="maxN" min="1" max="45" step="1" value="${Math.min(45, f.maxNights)}" aria-label="Longest trip in nights"></div>
+          <div class="chips tl-presets">${[[2, 4, 'Weekend'], [6, 9, '1 week'], [12, 16, '2 weeks'], [7, 21, '1–3 weeks'], [21, 35, '3–5 weeks']].map(([a, b, l]) => `<button type="button" class="chip" data-tl="${a}-${b}">${l}</button>`).join('')}</div>
+        </div></div>
       <div class="field"><span class="lbl">Stops</span>${seg('maxStops', [[0, 'Direct'], [1, 'Max 1'], [-1, 'Any']], f.maxStops)}</div>
       <div class="field"><span class="lbl">Airlines</span>
         <div class="seg" id="air-mode"><button type="button" data-m="any">Any airline</button><button type="button" data-m="pick">Choose airlines</button></div>
@@ -799,17 +822,102 @@
         f.origins = $$('[data-o].on', sheet).map((x) => x.dataset.o);
         loadAirlines();
       }));
-      $$('[data-w]', sheet).forEach((b) => (b.onclick = () => {
-        when = b.dataset.w;
-        $$('[data-w]', sheet).forEach((x) => x.classList.toggle('on', x === b));
-        $('#dates', sheet).hidden = when !== 'custom';
-        $('#when-hint', sheet).textContent = when === 'custom' ? 'Departure between these dates.' : 'Departure any day from today until then.';
+      // When: a range calendar (tap the first day, then the last), or a flexible "next N months".
+      let flexWhen = when === 'custom' ? '3' : when;
+      const iso = (d) => d.toISOString().slice(0, 10);
+      const addDays = (s, n) => { const d = new Date(s + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return iso(d); };
+      const lastDay = addDays(today, 364);
+      const dFrom = $('#dFrom', sheet), dTo = $('#dTo', sheet);
+      let calView = (dFrom.value || today).slice(0, 7);
+      const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00Z') - new Date(a + 'T00:00:00Z')) / 86400000);
+      const whenHint = () => {
+        const h = $('#when-hint', sheet);
+        if (when !== 'custom') { h.textContent = 'Leaving any day from today until then.'; return; }
+        const a = dFrom.value, b = dTo.value;
+        const span = a && b ? daysBetween(a, b) : 0;
+        const minN = +$('#minN', sheet).value;
+        h.classList.toggle('warn', !!(a && b && f.trip === 'return' && span < minN));
+        h.textContent = !a ? 'Tap the first day you could leave.' : !b ? 'Now tap the last day you need to be back.'
+          : f.trip === 'return' && span < minN ? `This window is ${span} ${span === 1 ? 'night' : 'nights'}, shorter than your shortest trip (${minN}). Pick a wider range or a shorter trip.`
+          : f.trip === 'return' ? 'Your whole trip fits inside these dates: you leave on or after the first day and are back by the last.'
+          : 'You leave on any day between these dates.';
+      };
+      const renderCal = () => {
+        const [y, m] = calView.split('-').map(Number);
+        const first = new Date(Date.UTC(y, m - 1, 1));
+        const lead = (first.getUTCDay() + 6) % 7;
+        const n = new Date(Date.UTC(y, m, 0)).getUTCDate();
+        const a = dFrom.value, b = dTo.value;
+        let html = '<span></span>'.repeat(lead);
+        for (let d = 1; d <= n; d++) {
+          const s = `${calView}-${String(d).padStart(2, '0')}`;
+          const off = s < today || s > lastDay;
+          const cls = [off ? 'off' : '', s === today ? 'today' : '', s === a ? 'start' : '', s === b ? 'end' : '', a && b && s > a && s < b ? 'in' : ''].filter(Boolean).join(' ');
+          html += `<button type="button" class="${cls}" data-d="${s}" ${off ? 'disabled' : ''}>${d}</button>`;
+        }
+        $('#rc-grid', sheet).innerHTML = html;
+        $('#rc-title', sheet).textContent = `${MONTHS_LONG[m - 1]} ${y}`;
+        $('[data-cal="-1"]', sheet).disabled = calView <= today.slice(0, 7);
+        $('[data-cal="1"]', sheet).disabled = calView >= lastDay.slice(0, 7);
+        $('#rc-sum', sheet).innerHTML = a && b
+          ? `<span class="rc-d"><small>From</small><b>${weekday(a)} ${day(a)}</b></span><span class="rc-arrow">${IC.plane}</span><span class="rc-d"><small>Until</small><b>${weekday(b)} ${day(b)}</b></span><span class="rc-len">${daysBetween(a, b) + 1} days</span>`
+          : `<span class="rc-d"><small>From</small><b class="${a ? '' : 'ph'}">${a ? `${weekday(a)} ${day(a)}` : 'Pick a day'}</b></span><span class="rc-arrow">${IC.plane}</span><span class="rc-d"><small>Until</small><b class="ph">${a ? 'Pick a day' : '–'}</b></span>`;
+        whenHint();
+      };
+      $('#rc-grid', sheet).addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-d]');
+        if (!btn) return;
+        const s = btn.dataset.d;
+        if (!dFrom.value || dTo.value || s < dFrom.value) { dFrom.value = s; dTo.value = ''; }
+        else dTo.value = s;
+        renderCal();
+        updateSum();
+      });
+      $$('[data-cal]', sheet).forEach((b) => (b.onclick = () => {
+        calView = iso(new Date(Date.UTC(+calView.slice(0, 4), +calView.slice(5) - 1 + +b.dataset.cal, 1))).slice(0, 7);
+        renderCal();
       }));
+      $$('[data-wm]', sheet).forEach((b) => (b.onclick = () => {
+        when = b.dataset.wm === 'custom' ? 'custom' : flexWhen;
+        $$('[data-wm]', sheet).forEach((x) => x.classList.toggle('on', x === b));
+        $('#dates', sheet).hidden = when !== 'custom';
+        $('#when', sheet).hidden = when === 'custom';
+        whenHint();
+      }));
+      $$('[data-w]', sheet).forEach((b) => (b.onclick = () => {
+        when = flexWhen = b.dataset.w;
+        $$('[data-w]', sheet).forEach((x) => x.classList.toggle('on', x === b));
+        whenHint();
+      }));
+      renderCal();
+
+      // Trip length: one slider with two handles, plus quick picks.
+      const minR = $('#minN', sheet), maxR = $('#maxN', sheet);
+      const renderLen = (moved) => {
+        let a = +minR.value, b = +maxR.value;
+        if (a > b) { if (moved === minR) maxR.value = b = a; else minR.value = a = b; }
+        const pct = (v) => ((v - 1) / 44) * 100;
+        $('#dual-fill', sheet).style.cssText = `left:${pct(a)}%;right:${100 - pct(b)}%`;
+        $('#tl-val', sheet).textContent = a === b ? `${a} ${a === 1 ? 'night' : 'nights'}` : `${a}–${b}${b === 45 ? '+' : ''} nights`;
+        const wk = (n) => (n % 7 === 0 ? `${n / 7} ${n === 7 ? 'week' : 'weeks'}` : `${n + 1} days`);
+        $('#tl-sub', sheet).textContent = a === b ? wk(a) : `${wk(a)} to ${wk(b)}${b === 45 ? ' or more' : ''}`;
+        $$('[data-tl]', sheet).forEach((c) => c.classList.toggle('on', c.dataset.tl === `${a}-${b}`));
+        whenHint();
+      };
+      minR.oninput = () => renderLen(minR);
+      maxR.oninput = () => renderLen(maxR);
+      $$('[data-tl]', sheet).forEach((c) => (c.onclick = () => {
+        const [a, b] = c.dataset.tl.split('-');
+        minR.value = a; maxR.value = b;
+        renderLen();
+        updateSum();
+      }));
+      renderLen();
       $$('[data-seg]', sheet).forEach((s) => $$('button', s).forEach((b) => (b.onclick = () => {
         $$('button', s).forEach((x) => x.classList.toggle('on', x === b));
         const v = b.dataset.v;
         f[s.dataset.seg] = /^-?\d+$/.test(v) ? +v : v;
-        if (s.dataset.seg === 'trip') $('#nights-field', sheet).hidden = v === 'oneway';
+        if (s.dataset.seg === 'trip') { $('#nights-field', sheet).hidden = v === 'oneway'; whenHint(); }
         if (s.dataset.seg === 'trip' || s.dataset.seg === 'maxStops') loadAirlines();
       })));
       // A plain-language summary of what will be tracked, kept up to date while you edit.
@@ -819,14 +927,14 @@
         const from = names.length > 2 ? names.slice(0, -1).join(", ") + " or " + names[names.length - 1] : names.join(" or ");
         const to = !f.dest ? "…" : f.kind === "country" ? "anywhere in " + f.city : f.city;
         const minN = +$("#minN", sheet).value || 7, maxN = Math.max(minN, +$("#maxN", sheet).value || 21);
-        const leaving = when === "custom" ? ($("#dFrom", sheet).value && $("#dTo", sheet).value ? "leaving between " + day($("#dFrom", sheet).value) + " and " + day($("#dTo", sheet).value) : "on dates you pick")
+        const leaving = when === "custom" ? ($("#dFrom", sheet).value && $("#dTo", sheet).value ? (f.trip === "return" ? "away between " : "leaving between ") + day($("#dFrom", sheet).value) + " and " + day($("#dTo", sheet).value) : "on dates you pick")
           : "leaving in the next " + (when === "1" ? "month" : when + " months");
         const st = f.maxStops === 0 ? "direct flights only" : f.maxStops === 1 ? "max 1 stop" : "any number of stops";
         const al = f.airlines.length ? "only " + f.airlines.map(airlineName).join(", ") : "any airline";
         const lvl = { extreme: "extreme deals", great: "great deals", good: "every deal" }[f.alert];
         const mp = +$("#maxPrice", sheet).value;
         sumEl.innerHTML = "<b>" + (f.trip === "return" ? "Return trips" : "One-way flights") + "</b> from " + esc(from || "…") + " to <b>" + esc(to) + "</b>"
-          + (f.trip === "return" ? ", " + minN + "–" + maxN + " nights" : "") + ", " + leaving + ", " + st + ", " + esc(al) + ". Alerts for " + lvl + (mp ? " or below " + eur(mp) : "") + ".";
+          + (f.trip === "return" ? ", " + (minN === maxN ? minN : minN + "–" + (maxN >= 45 ? "45+" : maxN)) + " nights" : "") + ", " + leaving + ", " + st + ", " + esc(al) + ". Alerts for " + lvl + (mp ? " or below " + eur(mp) : "") + ".";
       };
       sheet.addEventListener("input", updateSum);
       sheet.addEventListener("click", () => setTimeout(updateSum, 0));
@@ -836,10 +944,12 @@
         if (!f.dest) return toast('Pick a destination', 'Type a city or country and tap it in the list.');
         f.minNights = +$('#minN', sheet).value || 7;
         f.maxNights = Math.max(f.minNights, +$('#maxN', sheet).value || 21);
+        if (f.maxNights >= 45) f.maxNights = 90;   // the slider's last stop means "or longer"
         f.maxPrice = +$('#maxPrice', sheet).value || null;
         if (when === 'custom') {
           f.dateFrom = $('#dFrom', sheet).value; f.dateTo = $('#dTo', sheet).value;
-          if (!f.dateFrom || !f.dateTo) return toast('Pick both dates');
+          if (!f.dateFrom || !f.dateTo) return toast('Pick your dates', 'Tap the first day you could leave, then the last day you need to be back.');
+          if (f.trip === 'return' && daysBetween(f.dateFrom, f.dateTo) < f.minNights) return toast('Those dates are too close together', 'Pick a wider range or a shorter trip.');
         } else { f.months = +when; f.dateFrom = f.dateTo = null; }
         const btn = e.currentTarget;
         btn.disabled = true;

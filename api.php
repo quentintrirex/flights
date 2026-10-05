@@ -52,7 +52,7 @@ function watch_view(array $w): array
             $f = q('SELECT origin, dest, dest_name, depart, ret, nights, price, airline, stops, dep_time FROM fares WHERE watch_id=? AND last_seen=? ORDER BY price, depart LIMIT 1',
                    [$w['id'], (int) $w['scanned_at']])->fetch();
             return $f ? ['origin' => $f['origin'], 'dest' => $f['dest'], 'destName' => $f['dest_name'], 'depart' => $f['depart'], 'ret' => $f['ret'],
-                         'nights' => $f['nights'] ? (int) $f['nights'] : null, 'price' => (int) $f['price'], 'airlineName' => airline_name($f['airline']),
+                         'nights' => $f['nights'] ? (int) $f['nights'] : null, 'price' => (int) $f['price'], 'airline' => $f['airline'], 'airlineName' => airline_name($f['airline']),
                          'stops' => (int) $f['stops'], 'depTime' => $f['dep_time']] : null;
         })(),
         // Deal levels need two earlier days of prices: how many days of prices we have so far.

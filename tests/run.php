@@ -108,10 +108,10 @@ check('custom window kept', window_of(['date_from' => '2026-12-01', 'date_to' =>
 check('custom window never starts in the past', window_of(['date_from' => '2026-09-01', 'date_to' => '2026-10-20', 'months' => 3])[0] === '2026-10-03');
 check('months covering a window', months_between('2026-10-03', '2027-01-03') === ['2026-10', '2026-11', '2026-12', '2027-01']);
 q('INSERT INTO watches(origins,dest,dest_city,trip,months,min_nights,max_nights,max_stops,alert,created_at,date_from,date_to) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
-  ['AMS', 'DPS', 'Bali', 'return', 3, 7, 21, -1, 'great', now(), '2026-12-10', '2026-12-20']);
+  ['AMS', 'DPS', 'Bali', 'return', 3, 7, 21, -1, 'great', now(), '2026-12-05', '2027-01-15']);
 $r = scan_watch(watch(2));
-$out = (int) q("SELECT COUNT(*) FROM fares WHERE watch_id=2 AND (depart<'2026-12-10' OR depart>'2026-12-20')")->fetchColumn();
-check('custom dates: only departures inside the window', $r['ok'] && $r['fares'] > 0 && $out === 0, json_encode($r));
+$out = (int) q("SELECT COUNT(*) FROM fares WHERE watch_id=2 AND (depart<'2026-12-05' OR ret>'2027-01-15')")->fetchColumn();
+check('custom dates: the whole trip fits inside the window', $r['ok'] && $r['fares'] > 0 && $out === 0, json_encode($r));
 
 echo "Country routes\n";
 q("INSERT INTO watches(origins,dest,dest_city,kind,trip,months,min_nights,max_nights,max_stops,alert,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",

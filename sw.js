@@ -1,5 +1,5 @@
 /* Service worker: push notifications and a tiny offline shell. */
-const CACHE = 'flights-v8';
+const CACHE = 'flights-v9';
 const SHELL = ['./', 'assets/app.css', 'assets/app.js', 'places.php', 'assets/icon.svg'];
 
 self.addEventListener('install', (e) => {
@@ -14,7 +14,7 @@ self.addEventListener('activate', (e) => {
 // Network first (prices must be fresh); the cached shell is only for when there is no connection.
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  if (e.request.method !== 'GET' || url.origin !== location.origin || url.pathname.endsWith('api.php')) return;
+  if (e.request.method !== 'GET' || url.origin !== location.origin || url.pathname.endsWith('api.php') || url.pathname.endsWith('logo.php')) return;
   e.respondWith(fetch(e.request).catch(() => caches.match(e.request, { ignoreSearch: true }).then((r) => r || caches.match('./'))));
 });
 
