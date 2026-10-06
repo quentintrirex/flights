@@ -134,6 +134,89 @@ check('airlines on a route: cheapest first, with names and counts', count($list)
 check('airlines list is cached', route_airlines(['AMS', 'EIN'], 'city', 'BKK', true, 1, new DemoProvider()) === $list);
 check('fares store leg details', (int) q('SELECT COUNT(*) FROM fares WHERE watch_id=4 AND (dep_time IS NULL OR dur_out IS NULL OR flight_no IS NULL)')->fetchColumn() === 0);
 
+echo "Sparse dates: closest options, two one-way tickets, via a cheaper city\n";
+// Prices far ahead are scarce (the source only knows what people searched recently). This source has one return
+// fare that does not fit, one-way fares that do, and a cheap way via Oslo.
+final class SparseProvider implements Provider
+{
+    public bool $oneways = true;
+    public int $osl = 380;
+    public function name(): string { return 'Sparse test'; }
+    public static function mk(string $o, string $d, string $dep, ?string $ret, int $price, string $air, string $time, int $dur = 600, int $stops = 1): array
+    {
+        return ['origin' => $o, 'dest' => $d, 'city' => $d, 'dest_name' => $d, 'depart' => $dep, 'ret' => $ret,
+                'nights' => $ret ? (int) round((strtotime($ret) - strtotime($dep)) / 86400) : null, 'price' => $price, 'airline' => $air, 'stops' => $stops,
+                'duration' => $dur, 'link' => "https://example.test/$o$d$dep", 'dep_time' => $time, 'ret_time' => $ret ? '22:00' : null,
+                'stops_out' => $stops, 'stops_back' => $ret ? $stops : null, 'dur_out' => $dur, 'dur_back' => $ret ? $dur : null, 'flight_no' => null];
+    }
+    public function fares(string $o, string $d, string $m, bool $return, bool $direct): array
+    {
+        $all = [
+            self::mk('AMS', 'BKK', '2027-04-02', '2027-04-30', 610, 'TK', '11:00'),          // 28 nights, Turkish: does not fit
+            self::mk('OSL', 'BKK', '2027-04-05', '2027-04-27', $this->osl, 'EY', '13:00'),          // the long flight from Oslo
+        ];
+        if ($this->oneways) array_push($all,
+            self::mk('AMS', 'BKK', '2027-03-25', null, 300, 'EY', '10:00'),
+            self::mk('BKK', 'AMS', '2027-04-16', null, 280, 'QR', '09:00'),                  // 22 nights after 25 Mar
+            self::mk('AMS', 'OSL', '2027-04-05', null, 20, 'SK', '10:00', 120, 0),           // same day, too tight (arrives 12:00, long flight 13:00)
+            self::mk('AMS', 'OSL', '2027-04-04', null, 49, 'DY', '18:00', 120, 0),           // the evening before: fine
+            self::mk('OSL', 'AMS', '2027-04-28', null, 10, 'DY', '08:00', 120, 0),           // too early after landing
+            self::mk('OSL', 'AMS', '2027-04-28', null, 45, 'SK', '16:00', 120, 0));
+        return array_values(array_filter($all, fn($f) => $f['origin'] === $o && $f['dest'] === $d && substr($f['depart'], 0, 7) === $m && ($f['ret'] !== null) === $return));
+    }
+    public function faresToCountry(string $o, string $c, string $m, bool $r, bool $d): array { return []; }
+    public function sample(array $origins, array $dests, array $months, bool $return, bool $direct): array
+    {
+        $out = [];
+        foreach ($origins as $o) foreach ($dests as $d) foreach ($months as $m) array_push($out, ...$this->fares($o, $d, $m, $return, $direct));
+        return $out;
+    }
+}
+putenv('FLIGHTS_NOW=' . strtotime('2026-10-06 09:00'));
+q("DELETE FROM kv WHERE k LIKE 'smp:%'");
+q('INSERT INTO watches(origins,dest,dest_city,trip,months,min_nights,max_nights,max_stops,alert,created_at,date_from,date_to,airlines,via) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+  ['AMS', 'BKK', 'Bangkok', 'return', 3, 20, 25, 1, 'great', now(), '2027-03-22', '2027-05-31', 'EY,QR,EK', 0]);
+$bkk = (int) db()->lastInsertId();
+$sp = new SparseProvider(); $sp->oneways = false;
+$r = scan_watch(watch($bkk), $sp);
+$near = json_decode((string) kv("near:$bkk"), true);
+check('no fitting fare: the scan succeeds with 0 fares (no error)', $r['ok'] && $r['fares'] === 0, json_encode($r));
+check('the closest option is kept, with what differs (28 nights, Turkish Airlines)', count($near) === 1 && $near[0]['price'] === 610
+    && str_contains(implode(' ', $near[0]['why']), '28 nights') && str_contains(implode(' ', $near[0]['why']), 'Turkish'), json_encode($near));
+
+q("DELETE FROM kv WHERE k LIKE 'smp:%'");
+$sp->oneways = true;
+$r = scan_watch(watch($bkk), $sp);
+$rows = live_fares(watch($bkk));
+$split = array_values(array_filter($rows, fn($f) => $f['ftype'] === 'split'));
+check('two one-way tickets that fit make a trip (25 Mar out with Etihad, 16 Apr back with Qatar, 22 nights, 580)', count($split) === 1 && (int) $split[0]['price'] === 580
+    && $split[0]['depart'] === '2027-03-25' && $split[0]['ret'] === '2027-04-16' && (int) $split[0]['nights'] === 22 && count(json_decode($split[0]['legs'], true)) === 2, json_encode($rows));
+check('with a fitting trip, the closest-options list is empty', json_decode((string) kv("near:$bkk"), true) === []);
+check('via is off: no via trips', !array_filter($rows, fn($f) => $f['ftype'] === 'via'));
+
+q('UPDATE watches SET via=1 WHERE id=?', [$bkk]);
+q("DELETE FROM kv WHERE k LIKE 'smp:%'");
+$r = scan_watch(watch($bkk), $sp);
+$via = array_values(array_filter(live_fares(watch($bkk)), fn($f) => $f['ftype'] === 'via'));
+$legs = $via ? json_decode($via[0]['legs'], true) : [];
+check('via Oslo: 49 + 380 + 45 = 474, cheaper than the 580 trip, so it is shown', count($via) === 1 && (int) $via[0]['price'] === 474 && ($legs['hub'] ?? '') === 'Oslo', json_encode($via));
+check('to Oslo the evening before (the same-day flight is too tight for separate tickets)', ($legs['flights'][0]['date'] ?? '') === '2027-04-04' && ($legs['nightsBefore'] ?? null) === 1);
+check('home the day after landing, not the 08:00 flight but the one after 15:00', ($legs['flights'][2]['date'] ?? '') === '2027-04-28' && ($legs['flights'][2]['price'] ?? 0) === 45);
+check('home dates are the dates of the cheap flights (leave 4 Apr, back 28 Apr), nights = nights at the destination', $via && $via[0]['depart'] === '2027-04-04' && $via[0]['ret'] === '2027-04-28' && (int) $via[0]['nights'] === 22);
+check('the extra stop counts as a stop', $via && (int) $via[0]['stops'] === 2);
+check('the alert text says it is via Oslo on separate tickets', (function () use ($via, $bkk) {
+    $w = watch($bkk); $b = $via[0] + ['level' => 'great'];
+    $t = ($b['ftype'] === 'via' ? ' · via ' . (json_decode((string) $b['legs'], true)['hub'] ?? '') . ', separate tickets' : '');
+    return str_contains($t, 'via Oslo, separate tickets');
+})());
+// A via trip that is not cheaper than the normal one is left out.
+$sp->osl = 600;
+putenv('FLIGHTS_NOW=' . strtotime('2026-10-06 10:00'));
+q("DELETE FROM kv WHERE k LIKE 'smp:%'");
+scan_watch(watch($bkk), $sp);
+check('a via trip that is not cheaper than the normal trip is left out (600 + 94 > 580)', !array_filter(live_fares(watch($bkk)), fn($f) => $f['ftype'] === 'via'));
+putenv('FLIGHTS_NOW');
+
 echo "Security helpers\n";
 check('push: Apple accepted', push_host_ok('https://web.push.apple.com/QK1'));
 check('push: Google accepted', push_host_ok('https://fcm.googleapis.com/fcm/send/x'));

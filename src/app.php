@@ -62,9 +62,9 @@ function db(): PDO
     SQL);
     // Upgrades for databases made by an earlier version (never drops data).
     $add = [
-        'watches' => ['kind' => "TEXT NOT NULL DEFAULT 'city'", 'date_from' => 'TEXT', 'date_to' => 'TEXT', 'airlines' => "TEXT NOT NULL DEFAULT ''"],
+        'watches' => ['kind' => "TEXT NOT NULL DEFAULT 'city'", 'date_from' => 'TEXT', 'date_to' => 'TEXT', 'airlines' => "TEXT NOT NULL DEFAULT ''", 'via' => 'INTEGER NOT NULL DEFAULT 0'],
         'fares'   => ['dest_name' => 'TEXT', 'dep_time' => 'TEXT', 'ret_time' => 'TEXT', 'stops_out' => 'INTEGER', 'stops_back' => 'INTEGER',
-                      'dur_out' => 'INTEGER', 'dur_back' => 'INTEGER', 'flight_no' => 'TEXT'],
+                      'dur_out' => 'INTEGER', 'dur_back' => 'INTEGER', 'flight_no' => 'TEXT', 'ftype' => "TEXT NOT NULL DEFAULT 'rt'", 'legs' => 'TEXT'],
         'history' => ['fares' => 'INTEGER'],
         'alerts'  => ['price' => 'INTEGER'],
     ];
@@ -195,6 +195,12 @@ function scan_watch(array $w, ?Provider $p = null): array
     $airlines = array_filter(explode(',', (string) ($w['airlines'] ?? '')));   // empty = any airline
     $found = [];
     $errors = [];
+    $raw = [];   // everything the source had (also outside the settings), for "closest options" when nothing matches
+    $add = function (array $f) use (&$found) {
+        $f['ftype'] ??= 'rt';
+        $k = ($f['ftype'] === 'rt' ? '' : $f['ftype'] . ':' . ($f['via'] ?? '') . ':') . $f['origin'] . $f['dest'] . $f['depart'] . ($f['ret'] ?? '') . $f['airline'];
+        if (!isset($found[$k]) || $f['price'] < $found[$k]['price']) $found[$k] = $f + ['k' => $k];
+    };
     foreach (explode(',', $w['origins']) as $origin) {
         foreach (months_between($from, $to) as $month) {
             try {
@@ -202,21 +208,47 @@ function scan_watch(array $w, ?Provider $p = null): array
                     ? $p->faresToCountry($origin, $w['dest'], $month, $w['trip'] === 'return', (int) $w['max_stops'] === 0)
                     : $p->fares($origin, $w['dest'], $month, $w['trip'] === 'return', (int) $w['max_stops'] === 0);
                 foreach ($list as $f) {
-                    if ($f['depart'] < $from || $f['depart'] > $to) continue;
-                    if ($w['max_stops'] >= 0 && $f['stops'] > $w['max_stops']) continue;
-                    if ($w['trip'] === 'return' && (!$f['ret'] || $f['nights'] < $w['min_nights'] || $f['nights'] > $w['max_nights'])) continue;
                     if ($w['trip'] === 'oneway' && $f['ret']) continue;
-                    // Picked dates are a travel window: a return trip has to be home by the last day too.
-                    if ($w['trip'] === 'return' && $w['date_to'] && $f['ret'] > $w['date_to']) continue;
-                    if ($airlines && !in_array($f['airline'], $airlines, true)) continue;
-                    $k = $f['origin'] . $f['dest'] . $f['depart'] . ($f['ret'] ?? '') . $f['airline'];
-                    if (!isset($found[$k]) || $f['price'] < $found[$k]['price']) $found[$k] = $f + ['k' => $k];
+                    if ($w['trip'] === 'return' && !$f['ret']) continue;
+                    $raw[] = $f;
+                    if (!misses($w, $f, $from, $to, $airlines)) $add($f);
                 }
             } catch (Throwable $e) {
                 $errors[] = $e->getMessage();
             }
         }
     }
+    // Two one-way tickets (out and back separately): the price data has far more one-way fares, so this fills
+    // the many dates without a cached return fare. Only kept when it beats a return ticket for the same dates.
+    if ($w['trip'] === 'return') {
+        try {
+            foreach (split_trips($w, $p, $from, $to) as $f) {
+                $raw[] = $f;
+                if (misses($w, $f, $from, $to, $airlines)) continue;
+                $same = $f['origin'] . $f['dest'] . $f['depart'] . $f['ret'];
+                $rt = array_filter($found, fn($r) => $r['ftype'] === 'rt' && $r['origin'] . $r['dest'] . $r['depart'] . $r['ret'] === $same && $r['price'] <= $f['price']);
+                if (!$rt) $add($f);
+            }
+        } catch (Throwable $e) { $errors[] = $e->getMessage(); }
+    }
+    // Advanced: via a cheaper city (a cheap flight to a hub such as Oslo or Istanbul, the long flight from there).
+    if (!empty($w['via'])) {
+        try {
+            $std = array_column($found, 'price');
+            $stdMin = $std ? min($std) : null;
+            $viaAll = via_trips($w, $p, $from, $to, $airlines);
+            foreach ($viaAll as $f) {
+                if ($stdMin !== null && $f['price'] >= $stdMin) continue;          // only when it is cheaper
+                $add($f);
+            }
+            // What the check found, also when no city was cheaper ("best via Istanbul €640, not cheaper").
+            kv('via:' . $w['id'], json_encode(['at' => $t, 'hubs' => count(HUBS), 'best' => $viaAll ? ['hub' => $viaAll[0]['legs']['hub'], 'price' => $viaAll[0]['price']] : null,
+                                              'cheaper' => count(array_filter($viaAll, fn($f) => $stdMin === null || $f['price'] < $stdMin))]));
+        } catch (Throwable $e) { $errors[] = $e->getMessage(); }
+    }
+    // Nothing matches: keep the closest options (a few nights more, another airline, a few days later), each
+    // with what differs, so the route never just says "nothing".
+    kv('near:' . $w['id'], json_encode($found ? [] : near_matches($w, $raw, $from, $to, $airlines)));
 
     if (!$found && $errors) {
         q('UPDATE watches SET scanned_at=?, scan_error=? WHERE id=?', [$t, $errors[0], $w['id']]);
@@ -257,17 +289,18 @@ function scan_watch(array $w, ?Provider $p = null): array
         }
 
         $up = $db->prepare('INSERT INTO fares(watch_id,k,origin,dest,dest_name,depart,ret,nights,price,airline,stops,duration,link,first_seen,last_seen,
-                dep_time,ret_time,stops_out,stops_back,dur_out,dur_back,flight_no)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                dep_time,ret_time,stops_out,stops_back,dur_out,dur_back,flight_no,ftype,legs)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(watch_id,k) DO UPDATE SET price=excluded.price, stops=excluded.stops, duration=excluded.duration,
             link=excluded.link, dest_name=excluded.dest_name, last_seen=excluded.last_seen,
             dep_time=excluded.dep_time, ret_time=excluded.ret_time, stops_out=excluded.stops_out, stops_back=excluded.stops_back,
-            dur_out=excluded.dur_out, dur_back=excluded.dur_back, flight_no=excluded.flight_no');
+            dur_out=excluded.dur_out, dur_back=excluded.dur_back, flight_no=excluded.flight_no, ftype=excluded.ftype, legs=excluded.legs');
         foreach ($found as $f) {
             $up->execute([$w['id'], $f['k'], $f['origin'], $f['dest'], $f['dest_name'] ?? null, $f['depart'], $f['ret'], $f['nights'],
                           $f['price'], $f['airline'], $f['stops'], $f['duration'], $f['link'], $t, $t,
                           $f['dep_time'] ?? null, $f['ret_time'] ?? null, $f['stops_out'] ?? null, $f['stops_back'] ?? null,
-                          $f['dur_out'] ?? null, $f['dur_back'] ?? null, $f['flight_no'] ?? null]);
+                          $f['dur_out'] ?? null, $f['dur_back'] ?? null, $f['flight_no'] ?? null,
+                          $f['ftype'] ?? 'rt', isset($f['legs']) ? json_encode($f['legs'], JSON_UNESCAPED_UNICODE) : null]);
         }
         q('UPDATE watches SET scanned_at=?, scan_error=?, normal_price=?, low_price=?, scans=scans+1 WHERE id=?',
           [$t, $errors ? $errors[0] : null, $normal, $low, $w['id']]);
@@ -281,6 +314,221 @@ function scan_watch(array $w, ?Provider $p = null): array
 
     if ($alert) push_all(['title' => $alert['title'], 'body' => $alert['body'], 'url' => './#/route/' . $w['id'], 'tag' => 'route-' . $w['id']]);
     return ['ok' => true, 'fares' => count($found), 'low' => $low, 'normal' => $normal, 'alert' => $alert];
+}
+
+/**
+ * What keeps a fare out of a route's settings, as short plain reasons (empty = it fits). Used to filter, and to
+ * explain the closest options when nothing fits.
+ * @return array<int, array{what:string, text:string, cost:int}> cost = how far off (for sorting)
+ */
+function misses(array $w, array $f, string $from, string $to, array $airlines): array
+{
+    $out = [];
+    if ($f['depart'] < $from) $out[] = ['what' => 'dates', 'text' => 'leaves ' . days_between($f['depart'], $from) . ' days early', 'cost' => days_between($f['depart'], $from)];
+    if ($f['depart'] > $to) $out[] = ['what' => 'dates', 'text' => 'leaves ' . days_between($to, $f['depart']) . ' days later', 'cost' => days_between($to, $f['depart'])];
+    if ($w['trip'] === 'return' && $f['ret']) {
+        $n = (int) $f['nights'];
+        if ($n < $w['min_nights']) $out[] = ['what' => 'nights', 'text' => "$n nights (you want {$w['min_nights']}–{$w['max_nights']})", 'cost' => $w['min_nights'] - $n];
+        if ($n > $w['max_nights']) $out[] = ['what' => 'nights', 'text' => "$n nights (you want {$w['min_nights']}–{$w['max_nights']})", 'cost' => $n - $w['max_nights']];
+        // Picked dates are a travel window: a return trip has to be home by the last day too.
+        if ($w['date_to'] && $f['ret'] > $w['date_to']) $out[] = ['what' => 'dates', 'text' => 'back ' . date('j M', strtotime($f['ret'])) . ', after ' . date('j M', strtotime($w['date_to'])), 'cost' => days_between($w['date_to'], $f['ret'])];
+    }
+    $maxStops = (int) $w['max_stops'];
+    if ($maxStops >= 0 && $f['stops'] > $maxStops) $out[] = ['what' => 'stops', 'text' => stops_label((int) $f['stops']), 'cost' => 3 * ($f['stops'] - $maxStops)];
+    // Two tickets: both have to be with one of your airlines.
+    $other = $airlines ? array_values(array_diff(array_filter($f['airlines_all'] ?? [$f['airline']]), $airlines)) : [];
+    if ($airlines && ($other || $f['airline'] === '')) $out[] = ['what' => 'airline', 'text' => (airline_name($other[0] ?? '') ?: 'another airline') . ' (not one of your airlines)', 'cost' => 2];
+    return $out;
+}
+
+function days_between(string $a, string $b): int
+{
+    return (int) round(abs(strtotime($b) - strtotime($a)) / 86400);
+}
+
+/** The closest options when nothing fits: at most two things off, not too far, cheapest first. */
+function near_matches(array $w, array $raw, string $from, string $to, array $airlines): array
+{
+    $airlines = array_values($airlines);
+    $cands = [];
+    foreach ($raw as $f) {
+        $m = misses($w, $f, $from, $to, $airlines);
+        if (!$m || count($m) > 2) continue;
+        if (max(array_column($m, 'cost')) > 10) continue;
+        $k = $f['origin'] . $f['dest'] . $f['depart'] . ($f['ret'] ?? '') . $f['airline'] . ($f['ftype'] ?? 'rt');
+        if (isset($cands[$k]) && $cands[$k]['price'] <= $f['price']) continue;
+        $cands[$k] = ['origin' => $f['origin'], 'dest' => $f['dest'], 'destName' => $f['dest_name'] ?? null, 'depart' => $f['depart'], 'ret' => $f['ret'],
+                      'nights' => $f['nights'], 'price' => (int) $f['price'], 'airline' => $f['airline'], 'airlineName' => airline_name($f['airline']),
+                      'stops' => (int) $f['stops'], 'type' => $f['ftype'] ?? 'rt', 'link' => $f['link'] ?? null,
+                      'why' => array_column($m, 'text'), 'off' => count($m), 'cost' => array_sum(array_column($m, 'cost'))];
+    }
+    $cands = array_values($cands);
+    usort($cands, fn($a, $b) => [$a['off'], $a['price']] <=> [$b['off'], $b['price']]);
+    return array_slice($cands, 0, 6);
+}
+
+/** A parallel sample of fares, cached for a few hours (the same one-way flights serve many routes and scans). */
+function sample_cached(Provider $p, array $origins, array $dests, array $months, bool $return, bool $direct, int $ttl): array
+{
+    $origins = array_values(array_unique($origins)); $dests = array_values(array_unique($dests));
+    $key = 'smp:' . md5(json_encode([$p->name(), $origins, $dests, $months, $return, $direct]));
+    $hit = kv($key);
+    if ($hit !== null && ($c = json_decode($hit, true)) && ($c['at'] ?? 0) > now() - $ttl) return $c['f'];
+    $f = $p->sample($origins, $dests, $months, $return, $direct);
+    kv($key, json_encode(['at' => now(), 'f' => $f], JSON_UNESCAPED_UNICODE));
+    if (random_int(1, 25) === 1) q("DELETE FROM kv WHERE k LIKE 'smp:%' AND json_extract(v, '$.at') < ?", [now() - 2 * 86400]);
+    return $f;
+}
+
+/** One flight of a combined trip, for the trip details (each one booked separately). */
+function leg(array $f, string $role): array
+{
+    return ['role' => $role, 'from' => $f['origin'], 'to' => $f['dest'], 'date' => $f['depart'], 'time' => $f['dep_time'] ?? null,
+            'ret' => $f['ret'] ?? null, 'retTime' => $f['ret_time'] ?? null, 'airline' => $f['airline'], 'price' => (int) $f['price'],
+            'stops' => (int) $f['stops'], 'dur' => $f['dur_out'] ?? null, 'link' => $f['link'] ?? null, 'flightNo' => $f['flight_no'] ?? null];
+}
+
+/**
+ * Return trips made of two one-way tickets. Outbound to the destination (any of its cities for a country), back
+ * home from there (any city of that country, any home airport). Nights may be a week outside the settings, so
+ * the near-miss list can use them too; the caller filters.
+ */
+function split_trips(array $w, Provider $p, string $from, string $to): array
+{
+    $origins = explode(',', $w['origins']);
+    $dests = $w['kind'] === 'country' ? country_cities($w['dest'], 3) : [$w['dest']];
+    $direct = (int) $w['max_stops'] === 0;
+    $lastBack = $w['date_to'] ?: date('Y-m-d', strtotime($to . ' +' . ((int) $w['max_nights'] + 7) . ' days'));
+    $outs = sample_cached($p, $origins, $dests, months_between($from, $to), false, $direct, 3 * 3600);
+    $backs = sample_cached($p, $dests, $origins, months_between($from, $lastBack), false, $direct, 3 * 3600);
+    $outs = array_filter($outs, fn($o) => $o['depart'] >= date('Y-m-d', strtotime("$from -10 days")) && $o['depart'] <= $to && in_array($o['origin'], $origins, true));
+    $backs = array_filter($backs, fn($b) => in_array($b['dest'], $origins, true));
+    $lo = max(1, (int) $w['min_nights'] - 7); $hi = (int) $w['max_nights'] + 7;
+    $best = [];
+    foreach ($outs as $o) {
+        foreach ($backs as $b) {
+            $n = days_between($o['depart'], $b['depart']);
+            if ($b['depart'] <= $o['depart'] || $n < $lo || $n > $hi) continue;
+            $k = $o['origin'] . $o['dest'] . $o['depart'] . $b['depart'];
+            $price = (int) $o['price'] + (int) $b['price'];
+            if (isset($best[$k]) && $best[$k]['price'] <= $price) continue;
+            $best[$k] = ['origin' => $o['origin'], 'dest' => $o['dest'], 'city' => $o['city'] ?? $o['dest'], 'dest_name' => $o['dest_name'] ?? null,
+                'depart' => $o['depart'], 'ret' => $b['depart'], 'nights' => $n, 'price' => $price,
+                // The airline that matters for a filter is the one you fly most with; a mix shows as the outbound one.
+                'airline' => $o['airline'], 'stops' => max((int) $o['stops'], (int) $b['stops']),
+                'duration' => ($o['dur_out'] ?? 0) + ($b['dur_out'] ?? 0) ?: null, 'link' => $o['link'],
+                'dep_time' => $o['dep_time'] ?? null, 'ret_time' => $b['dep_time'] ?? null,
+                'stops_out' => (int) $o['stops'], 'stops_back' => (int) $b['stops'], 'dur_out' => $o['dur_out'] ?? null, 'dur_back' => $b['dur_out'] ?? null,
+                'flight_no' => $o['flight_no'] ?? null, 'ftype' => 'split', 'legs' => [leg($o, 'out'), leg($b, 'back')],
+                'airlines_all' => [$o['airline'], $b['airline']]];
+        }
+    }
+    // An airline filter must hold for both tickets.
+    usort($best, fn($a, $b) => $a['price'] <=> $b['price']);
+    return array_slice(array_values($best), 0, 150);
+}
+
+/** Hubs with many long-distance flights and cheap flights from the Netherlands, Belgium and Germany. */
+const HUBS = ['OSL', 'CPH', 'ARN', 'HEL', 'IST', 'LON', 'FRA', 'MAD', 'ATH'];
+const HUB_NAMES = ['OSL' => 'Oslo', 'CPH' => 'Copenhagen', 'ARN' => 'Stockholm', 'HEL' => 'Helsinki', 'IST' => 'Istanbul', 'LON' => 'London', 'FRA' => 'Frankfurt', 'MAD' => 'Madrid', 'ATH' => 'Athens'];
+
+/**
+ * Advanced: trips via a cheaper city, on separate tickets. A cheap flight from home to a hub, the long flight
+ * from the hub (one ticket, there and back), and a cheap flight home. Safety margins, because a missed connection
+ * on separate tickets is not covered: arrive at the hub the day before (or at least 4 hours before the long
+ * flight on the same day); fly home the day after you land (not before 15:00) or the day after that.
+ * A night at the hub is shown, never included in the price.
+ */
+function via_trips(array $w, Provider $p, string $from, string $to, array $airlines): array
+{
+    $origins = explode(',', $w['origins']);
+    $return = $w['trip'] === 'return';
+    $destCc = $w['kind'] === 'country' ? $w['dest'] : (city_info($w['dest'])[1] ?? '');
+    $hubs = array_values(array_filter(HUBS, fn($h) => !in_array($h, $origins, true) && $h !== $w['dest'] && (city_info($h)[1] ?? '') !== $destCc));
+    if (!$hubs) return [];
+    $dests = $w['kind'] === 'country' ? country_cities($w['dest'], 3) : [$w['dest']];
+    $direct = (int) $w['max_stops'] === 0;
+    $lastHome = $w['date_to'] ?: date('Y-m-d', strtotime($to . ' +' . ((int) $w['max_nights'] + 3) . ' days'));
+    $long = sample_cached($p, $hubs, $dests, months_between($from, $to), $return, $direct, 3 * 3600);
+    $posOut = sample_cached($p, $origins, $hubs, months_between(date('Y-m-d', strtotime("$from -2 days")), $to), false, false, 6 * 3600);
+    $posBack = $return ? sample_cached($p, $hubs, $origins, months_between($from, $lastHome), false, false, 6 * 3600) : [];
+
+    // Cheapest positioning flight per [airport][date], with its time.
+    $index = function (array $list, string $side) {
+        $o = [];
+        foreach ($list as $f) {
+            $a = $side === 'to' ? $f['dest'] : $f['origin'];
+            $k = $a . '|' . $f['depart'];
+            $o[$k][] = $f;
+        }
+        return $o;
+    };
+    $outIdx = $index(array_filter($posOut, fn($f) => in_array($f['origin'], $origins, true)), 'to');
+    $backIdx = $index(array_filter($posBack, fn($f) => in_array($f['dest'], $origins, true)), 'from');
+    $mins = fn(?string $t) => $t !== null && preg_match('/^(\d{2}):(\d{2})$/', $t, $m) ? (int) $m[1] * 60 + (int) $m[2] : null;
+    $shift = fn(string $d, int $n) => date('Y-m-d', strtotime("$d " . ($n >= 0 ? '+' : '') . "$n days"));
+
+    $best = [];
+    foreach ($long as $l) {
+        if ($return !== ($l['ret'] !== null)) continue;
+        $hubAp = $l['origin'];
+        if ($return && ($l['nights'] < $w['min_nights'] || $l['nights'] > $w['max_nights'])) continue;
+        if ((int) $w['max_stops'] >= 0 && $l['stops'] > (int) $w['max_stops']) continue;
+        if ($airlines && !in_array($l['airline'], $airlines, true)) continue;
+        // To the hub: the day before (or two), or the same day with 4 hours to spare.
+        $out = null;
+        foreach ([0, 1, 2] as $before) {
+            foreach ($outIdx[$hubAp . '|' . $shift($l['depart'], -$before)] ?? [] as $po) {
+                if ($before === 0) {
+                    $arr = $mins($po['dep_time'] ?? null); $dep = $mins($l['dep_time'] ?? null);
+                    if ($arr === null || $dep === null || $po['dur_out'] === null || $arr + (int) $po['dur_out'] + 240 > $dep) continue;
+                }
+                if ($out === null || $po['price'] < $out[0]['price']) $out = [$po, $before];
+            }
+        }
+        if ($out === null) continue;
+        // Home again: the day after landing (from 15:00) or the day after that.
+        $back = null;
+        if ($return) {
+            foreach ([1, 2] as $after) {
+                foreach ($backIdx[$hubAp . '|' . $shift($l['ret'], $after)] ?? [] as $pb) {
+                    if ($after === 1 && (($mins($pb['dep_time'] ?? null) ?? 0) < 15 * 60)) continue;
+                    if ($back === null || $pb['price'] < $back[0]['price']) $back = [$pb, $after];
+                }
+            }
+            if ($back === null) continue;
+        }
+        $homeDep = $out[0]['depart']; $homeRet = $back ? $back[0]['depart'] : null;
+        if ($homeDep < $from || $homeDep > $to || ($homeRet !== null && $w['date_to'] && $homeRet > $w['date_to'])) continue;
+        $price = (int) $l['price'] + (int) $out[0]['price'] + ($back ? (int) $back[0]['price'] : 0);
+        $hub = HUB_NAMES[city_of($hubAp)] ?? (city_info(city_of($hubAp))[0] ?? $hubAp);
+        $k = $out[0]['origin'] . $l['dest'] . $homeDep . ($homeRet ?? '') . $hubAp;
+        if (isset($best[$k]) && $best[$k]['price'] <= $price) continue;
+        $legs = [leg($out[0], 'to_hub'), leg($l, 'main')];
+        if ($back) $legs[] = leg($back[0], 'from_hub');
+        $best[$k] = ['origin' => $out[0]['origin'], 'dest' => $l['dest'], 'city' => $l['city'] ?? $l['dest'], 'dest_name' => $l['dest_name'] ?? null,
+            'depart' => $homeDep, 'ret' => $homeRet, 'nights' => $l['nights'], 'price' => $price, 'airline' => $l['airline'],
+            'stops' => (int) $l['stops'] + 1, 'duration' => null, 'link' => $l['link'],
+            'dep_time' => $out[0]['dep_time'] ?? null, 'ret_time' => $back[0]['dep_time'] ?? null,
+            'stops_out' => (int) ($l['stops_out'] ?? $l['stops']) + 1, 'stops_back' => $return ? (int) ($l['stops_back'] ?? $l['stops']) + 1 : null,
+            'dur_out' => null, 'dur_back' => null, 'flight_no' => $l['flight_no'] ?? null,
+            'ftype' => 'via', 'via' => $hubAp, 'legs' => ['hub' => $hub, 'hubCode' => $hubAp, 'nightsBefore' => $out[1], 'nightsAfter' => $back ? $back[1] - 1 : 0, 'flights' => $legs]];
+    }
+    usort($best, fn($a, $b) => $a['price'] <=> $b['price']);
+    return array_slice(array_values($best), 0, 40);
+}
+
+/** A readable city name for an airport or city code ("OSL" -> "Oslo"), else the code. */
+function city_name(string $code): string
+{
+    return HUB_NAMES[city_of($code)] ?? (city_info(city_of($code))[0] ?? $code);
+}
+
+/** City code of an airport when we know it (LHR -> LON), else the code itself. */
+function city_of(string $airport): string
+{
+    static $map = ['LHR' => 'LON', 'LGW' => 'LON', 'STN' => 'LON', 'LTN' => 'LON', 'LCY' => 'LON', 'SAW' => 'IST', 'TRF' => 'OSL', 'NYO' => 'ARN', 'BMA' => 'ARN', 'HHN' => 'FRA'];
+    return $map[$airport] ?? $airport;
 }
 
 /**
@@ -352,7 +600,9 @@ function raise_alerts(array $w, int $t, bool $firstScan): ?array
     $place = $w['kind'] === 'country' && $best['dest_name'] ? $best['dest_name'] . ', ' . $w['dest_city'] : $w['dest_city'];
     $title = $place . ' for ' . money((int) $best['price']) . ' · ' . $lvlName;
     $body = $best['origin'] . ' → ' . $best['dest'] . ' · ' . date_range($best['depart'], $best['ret'])
-          . ($best['ret'] ? ' · ' . $best['nights'] . ' nights' : '') . ' · ' . stops_label((int) $best['stops']);
+          . ($best['ret'] ? ' · ' . $best['nights'] . ' nights' : '') . ' · ' . stops_label((int) $best['stops'])
+          . (($best['ftype'] ?? 'rt') === 'via' ? ' · via ' . (json_decode((string) $best['legs'], true)['hub'] ?? 'another city') . ', separate tickets'
+            : (($best['ftype'] ?? 'rt') === 'split' ? ' · 2 one-way tickets' : ''));
     if ($w['normal_price']) $body .= '. ' . round((1 - $best['price'] / $w['normal_price']) * 100) . '% below normal';
     if (count($hits) > 1) $body .= ' (+' . (count($hits) - 1) . ' more cheap ' . (count($hits) > 2 ? 'dates' : 'date') . ')';
     q('INSERT INTO alerts(watch_id,fare_id,level,price,title,body,created_at) VALUES(?,?,?,?,?,?,?)',

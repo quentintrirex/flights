@@ -175,6 +175,7 @@
       b.ret ? `${IC.moon}<span>${b.nights} ${b.nights === 1 ? 'night' : 'nights'}</span>` : '',
       b.airlineName ? `${b.airline ? airMark(b.airline) : IC.plane}<span>${esc(b.airlineName)}</span>` : '',
       `${b.stops === 0 ? IC.direct : IC.stops}<span>${b.stops === 0 ? 'Direct' : b.stops === 1 ? '1 stop' : `${b.stops} stops`}</span>`,
+      b.type === 'via' && b.via ? `${IC.plane}<span>Via ${esc(b.via)}</span>` : b.type === 'split' ? `${IC.plane}<span>2 tickets</span>` : '',
     ].filter(Boolean);
     return `<div class="chips-trip">${chips.map((c) => `<span class="ct">${c}</span>`).join('')}</div>`;
   }
@@ -247,7 +248,7 @@
     const meta = `${w.trip === 'return' ? 'Return' : 'One way'}${w.trip === 'return' ? ` · ${nightsLabel(w)}` : ''} · ${windowLabel(w)}${w.maxStops === 0 ? ' · direct only' : ''}`;
     const price = w.low
       ? `<div class="p num">${eur(w.low)}</div><div class="n">${w.trip === 'return' ? 'return' : 'one way'} · per person</div>`
-      : `<div class="n">${w.error ? 'Check failed' : w.scannedAt ? 'No fares right now' : 'Checking…'}</div>`;
+      : `<div class="n">${w.error ? 'Check failed' : w.scannedAt ? 'No exact match yet' : 'Checking…'}</div>`;
     const status = w.paused ? '<span class="badge normal">Paused</span>' : verdict(w.low, w.normal);
     return `<a class="route enter${w.paused ? ' paused' : ''}" style="animation-delay:${i * 60}ms" href="#/route/${w.id}">
       ${band(w)}
@@ -409,8 +410,49 @@
         <div class="d">${when}</div>
         <div class="p num">${eur(f.price)}</div>
         <div class="s">${airMark(f.airline)}<span>${f.airlineName ? esc(f.airlineName) + ' · ' : ''}${f.origin} → ${country && f.destName ? esc(f.destName) + ' ' : ''}${f.dest} · ${f.ret ? f.nights + ' nights · ' : ''}${stops(f.stops)}</span></div>
+        ${typeChips(f)}
         <div class="b">${f.isNew ? '<span class="badge new">New</span> ' : ''}${badge(f.level)}<svg class="go" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></div>
       </button>`;
+  }
+
+  /** "Via Oslo · save €106" or "2 one-way tickets": how a trip is put together, when it is not one ticket. */
+  function typeChips(f) {
+    if (f.type === 'via' && f.via) return `<div class="tk-row"><span class="tk via">${ICON.plane}Via ${esc(f.via.hub || '')}</span>${f.via.saving ? `<span class="tk save">Save ${eur(f.via.saving)}</span>` : ''}<span class="tk">${f.legs.length} tickets</span></div>`;
+    if (f.type === 'split') return '<div class="tk-row"><span class="tk">2 one-way tickets</span></div>';
+    return '';
+  }
+
+  const LEG_LABEL = { out: 'Outbound', back: 'Return', to_hub: 'To the hub', from_hub: 'Home again' };
+
+  /** Trip details for a trip of separate tickets: every flight in order, the nights in between, each ticket bookable. */
+  function ticketsHtml(f, destLabel) {
+    const legs = f.legs || [];
+    const via = f.type === 'via' ? f.via || {} : null;
+    const parts = [];
+    let n = 0;
+    legs.forEach((l) => {
+      n++;
+      const tag = `<span class="tk-n">Ticket ${n}</span>`;
+      if (l.role === 'main' && l.ret) {
+        parts.push(leg(`${esc(l.fromName)} → ${esc(l.toName)} ${tag}`, l.date, l.time, l.from, l.to, l.airline, l.flightNo, l.stops, null));
+        parts.push(`<div class="stay">${ICON.bed}<span><b>${f.nights} nights</b> in ${esc(destLabel)}</span></div>`);
+        parts.push(leg(`${esc(l.toName)} → ${esc(l.fromName)} <span class="tk-n">Ticket ${n}, return</span>`, l.ret, l.retTime, l.to, l.from, l.airline, null, l.stops, null));
+        if (via && via.nightsAfter > 0) parts.push(`<div class="stay hub">${ICON.bed}<span><b>${via.nightsAfter} ${via.nightsAfter > 1 ? 'nights' : 'night'}</b> in ${esc(via.hub)} <small>hotel not included</small></span></div>`);
+        return;
+      }
+      parts.push(leg(`${esc(LEG_LABEL[l.role] || 'Flight')} ${tag}`, l.date, l.time, l.from, l.to, l.airline, l.flightNo, l.stops, l.dur));
+      if (l.role === 'to_hub' && via && via.nightsBefore > 0) parts.push(`<div class="stay hub">${ICON.bed}<span><b>${via.nightsBefore} ${via.nightsBefore > 1 ? 'nights' : 'night'}</b> in ${esc(via.hub)} before the long flight <small>hotel not included</small></span></div>`);
+      if (l.role === 'out' && f.ret) parts.push(`<div class="stay">${ICON.bed}<span><b>${f.nights} nights</b> in ${esc(destLabel)}</span></div>`);
+    });
+    const list = legs.map((l, i) => `<div class="ticket">
+        <div class="ticket-l"><b>${i + 1}. ${esc(l.fromName)} ${l.ret ? '⇄' : '→'} ${esc(l.toName)}</b><small>${weekday(l.date)} ${day(l.date)}${l.ret ? ` – ${weekday(l.ret)} ${day(l.ret)}` : ''} · ${esc(l.airlineName || 'airline on booking site')}</small></div>
+        <div class="ticket-p num">${eur(l.price)}</div>
+        <div class="ticket-a">${safeUrl(l.link) ? `<a class="btn small deal" href="${esc(l.link)}" target="_blank" rel="noopener noreferrer">Book</a>` : ''}<a class="btn small ghost" href="${esc(safeUrl(l.google))}" target="_blank" rel="noopener noreferrer">Google</a></div>
+      </div>`).join('');
+    const warn = via
+      ? `<div class="warn-box">${ICON.info}<div><b>Separate tickets: book each one yourself.</b> If a flight is late, the next airline does not have to rebook you. So you arrive in ${esc(via.hub)} ${via.nightsBefore ? 'the day before' : 'at least 4 hours early'}, and fly home the day after you land. Check your bags in again at each step.</div></div>`
+      : `<div class="warn-box soft">${ICON.info}<div><b>Two separate one-way tickets.</b> Book both. ${legs[0] && legs[1] && legs[0].airline !== legs[1].airline ? 'Different airlines, so each has its own baggage rules.' : ''}</div></div>`;
+    return `${parts.join('')}${warn}<div class="tickets"><div class="tickets-h">The tickets <span class="muted">together ${eur(f.price)}</span></div>${list}</div>`;
   }
 
   /* One leg of a trip, as a small timeline: leave, the flight, arrive. */
@@ -432,6 +474,7 @@
   function tripSheet(f) {
     const w = routeData.watch;
     const destLabel = f.destName || (w.kind === 'city' ? w.city : f.dest);
+    const multi = f.type && f.type !== 'rt' && f.legs && f.legs.length;
     const back = f.ret ? (f.durBack || null) : null;
     const total = f.durOut && (back || !f.ret) ? f.durOut + (back || 0) : f.duration;
     const facts = [
@@ -446,9 +489,10 @@
         <div class="muted">${f.ret ? 'Return trip' : 'One way'} · ${esc(f.airlineName || airlineName(f.airline) || 'airline on booking site')}</div></div>
         <div class="trip-price num">${eur(f.price)}${badge(f.level) ? `<div>${badge(f.level)}</div>` : ''}</div>
       </div>
+      ${multi ? ticketsHtml(f, destLabel) : `
       ${leg('Outbound', f.depart, f.depTime, f.origin, f.dest, f.airline, f.flightNo, f.stopsOut ?? (f.ret ? null : f.stops), f.durOut || (f.ret ? null : f.duration))}
       ${f.ret ? `<div class="stay">${ICON.bed}<span><b>${f.nights} nights</b> in ${esc(destLabel)}</span></div>
-        ${leg('Return', f.ret, f.retTime, f.dest, f.origin, f.airline, null, f.stopsBack, f.durBack)}` : ''}
+        ${leg('Return', f.ret, f.retTime, f.dest, f.origin, f.airline, null, f.stopsBack, f.durBack)}` : ''}`}
       <div class="facts">${facts.map(([l, v, s]) => `<div><span>${l}</span><b class="num">${v}</b>${s ? `<small>${esc(s)}</small>` : ''}</div>`).join('')}</div>
       <p class="muted small trip-note">${f.depTime ? '' : 'Times show up after the next price check. '}Price for 1 adult in economy, as found by Aviasales users in the last few days. Always confirm on the booking site.</p>
       <div class="trip-extra">
@@ -456,8 +500,8 @@
         <button class="btn small ghost" data-share>${ICON.share} Share</button>
       </div>
       <div class="sheet-foot trip-actions">
-        ${safeUrl(f.book) ? `<a class="btn deal block" href="${esc(f.book)}" target="_blank" rel="noopener noreferrer">Book this fare</a>` : ''}
-        <a class="btn block" href="${esc(safeUrl(f.google))}" target="_blank" rel="noopener noreferrer">Check on Google Flights</a>
+        ${multi ? '' : safeUrl(f.book) ? `<a class="btn deal block" href="${esc(f.book)}" target="_blank" rel="noopener noreferrer">Book this fare</a>` : ''}
+        ${multi ? '' : `<a class="btn block" href="${esc(safeUrl(f.google))}" target="_blank" rel="noopener noreferrer">Check on Google Flights</a>`}
       </div>`, (sheet) => {
       const title = `${originName(f.origin)} → ${destLabel}`;
       const summary = `${title}: ${eur(f.price)} · ${weekday(f.depart)} ${day(f.depart)}${f.depTime ? ' ' + f.depTime : ''}${f.ret ? ` – ${weekday(f.ret)} ${day(f.ret)} (${f.nights} nights)` : ' one way'} · ${stops(f.stops)}${f.airlineName ? ' · ' + f.airlineName : ''}`;
@@ -497,6 +541,41 @@
         ${list.map((a) => `<button class="ac${air.codes.includes(a.key) ? ' on' : ''}" data-air="${esc(a.key)}">${airMark(a.key)}<span>${esc(a.name)}</span><em class="num">${eur(a.price)}</em></button>`).join('')}
       </div>
     </div>`;
+  }
+
+  /** No fare fits yet: say why in plain words, and show the closest options with what differs. */
+  function quietCard(data, country) {
+    const w = data.watch, q = data.quiet || {}, near = data.near || [];
+    if (w.error) return '';
+    const strict = { airlines: `only ${w.airlines.length} ${w.airlines.length === 1 ? 'airline' : 'airlines'}`, nights: `a trip of ${nightsLabel(w)}`, direct: 'direct flights only', window: 'a short date window' };
+    const tight = (q.strict || []).map((k) => strict[k]).filter(Boolean);
+    const why = q.farAhead
+      ? `Your dates are about ${q.monthsAhead} months away. For dates that far ahead the price source still knows very few fares: it only has prices other travellers searched recently. More show up as the dates come closer, usually 2 to 4 months before. I check every hour and tell you when something fits.`
+      : 'Right now no fare fits all your settings. I check every hour and tell you when something fits.';
+    const nearRows = near.map((n) => `<a class="near" href="${esc(safeUrl(n.link) || 'https://www.google.com/travel/flights?q=' + encodeURIComponent(`Flights from ${n.origin} to ${n.dest} on ${n.depart}${n.ret ? ' through ' + n.ret : ''}`))}" target="_blank" rel="noopener noreferrer">
+        <div class="near-top"><b>${weekday(n.depart)} ${day(n.depart)}${n.ret ? ` – ${weekday(n.ret)} ${day(n.ret)}` : ''}</b><span class="num">${eur(n.price)}</span></div>
+        <div class="near-s">${airMark(n.airline)}<span>${esc(n.airlineName || '')}${n.airlineName ? ' · ' : ''}${esc(n.origin)} → ${country && n.destName ? esc(n.destName) + ' ' : ''}${esc(n.dest)}${n.ret ? ` · ${n.nights} nights` : ''} · ${stops(n.stops)}${n.type === 'split' ? ' · 2 tickets' : ''}</span></div>
+        <div class="near-why">${n.why.map((t) => `<span>${esc(t)}</span>`).join('')}</div>
+      </a>`).join('');
+    return `<section class="quiet enter">
+      <div class="quiet-h">${ICON.info}<b>Why there is no match yet</b></div>
+      <p>${why}</p>
+      ${tight.length ? `<p class="muted">Your settings are quite strict: ${esc(tight.join(', '))}. Loosening one of them finds more.</p>` : ''}
+      ${!w.via ? `<p class="muted">Tip: switch on <b>Via a cheaper city</b> in Edit to also check cheap routes through Oslo, Istanbul and other hubs.</p>` : ''}
+      ${near.length ? `<div class="near-t">Closest options <span class="muted">outside your settings, what differs is in orange</span></div><div class="near-list">${nearRows}</div>` : ''}
+      <button class="btn ghost small" data-edit="${w.id}">${ICON.edit} Change the settings</button>
+    </section>`;
+  }
+
+  /** What the via check found: cheaper options, or "none cheaper (best via Istanbul €640)". */
+  function viaLine(data) {
+    const v = data.viaCheck;
+    if (!data.watch.via || !v) return '';
+    const txt = data.viaCount
+      ? `${data.viaCount} cheaper ${data.viaCount === 1 ? 'trip' : 'trips'} via another city, marked <span class="tk via">Via</span> in the list.`
+      : v.best ? `Checked ${v.hubs} cities to fly via. None is cheaper right now (best: via ${esc(v.best.hub)} for ${eur(v.best.price)}${data.stdMin ? `, flying from home is ${eur(data.stdMin)}` : ''}).`
+      : `Checked ${v.hubs} cities to fly via. No combination with safe connections right now.`;
+    return `<p class="via-line enter">${ICON.plane}<span>${txt}</span></p>`;
   }
 
   let pollTimer;
@@ -573,20 +652,23 @@
         <button class="dh-trip" data-fare="${+best.id}">
           ${airMark(best.airline)}
           <span><b>${weekday(best.depart)} ${day(best.depart)}${best.ret ? ` – ${weekday(best.ret)} ${day(best.ret)}` : ''}</b>
-          <small>${best.depTime ? `${esc(best.depTime)} · ` : ''}${best.airlineName ? esc(best.airlineName) + ' · ' : ''}${stops(best.stops)}${best.ret ? ` · ${best.nights} nights` : ''}${country && best.destName ? ` · ${esc(best.destName)}` : ''}</small></span>
+          <small>${best.depTime ? `${esc(best.depTime)} · ` : ''}${best.airlineName ? esc(best.airlineName) + ' · ' : ''}${stops(best.stops)}${best.ret ? ` · ${best.nights} nights` : ''}${country && best.destName ? ` · ${esc(best.destName)}` : ''}${best.type === 'via' && best.via ? ` · via ${esc(best.via.hub)}, ${best.legs.length} tickets` : best.type === 'split' ? ' · 2 one-way tickets' : ''}</small></span>
           <em>Trip details ${ICON.chev}</em>
         </button>
+        ${best.type && best.type !== 'rt' ? `<div class="dh-type">${typeChips(best)}</div>` : ''}
         ${w.normal ? `<div class="meter"><div class="mark" style="left:${normalPos}%"></div><div class="pin" style="left:${normalPos}%" data-pin="${pinPos}"></div></div>
         <div class="meter-legend"><span>Steal</span><span>Usual ${eur(w.normal)}</span><span>Pricey</span></div>` : ''}
         <div class="dh-actions">
-          ${safeUrl(best.book) ? `<a class="btn light" href="${esc(best.book)}" target="_blank" rel="noopener noreferrer">Book this fare</a>` : ''}
-          <a class="btn glass" href="${esc(safeUrl(best.google))}" target="_blank" rel="noopener noreferrer">Google Flights</a>
+          ${best.type && best.type !== 'rt' ? `<button class="btn light" data-fare="${+best.id}">See the ${best.legs.length} tickets</button>`
+            : `${safeUrl(best.book) ? `<a class="btn light" href="${esc(best.book)}" target="_blank" rel="noopener noreferrer">Book this fare</a>` : ''}
+          <a class="btn glass" href="${esc(safeUrl(best.google))}" target="_blank" rel="noopener noreferrer">Google Flights</a>`}
         </div>`
         : air.codes.length
           ? `<div class="dh-empty"><b>No fares from ${esc(air.codes.map(airlineName).join(', '))} right now</b><button class="btn glass small" data-air="">Show all airlines</button></div>`
-          : `<div class="dh-empty"><b>${w.error ? esc(w.error) : 'No fares match right now'}</b><span>Try more nights, more airports, a longer window or allow stops${w.airlines.length ? ', or more airlines' : ''}.</span></div>`}
+          : `<div class="dh-empty"><b>${w.error ? esc(w.error) : 'No exact match yet'}</b><span>${w.error ? '' : 'See below why, and the closest options.'}</span></div>`}
       </section>
-      ${best ? summaryCard(w, best, ratio, country) : ''}
+      ${best ? summaryCard(w, best, ratio, country) : air.codes.length ? '' : quietCard(data, country)}
+      ${viaLine(data)}
       <p class="d-print">Checked ${ago(w.scannedAt)} · ${data.total} matching fares · found by Aviasales users in the last few days</p>
 
       ${airChips(data)}
@@ -679,7 +761,7 @@
 
   function editSheet(w, copyFrom) {
     const today = new Date().toISOString().slice(0, 10);
-    const f = w ? { ...w } : copyFrom ? { ...copyFrom, airlines: [...(copyFrom.airlines || [])] } : { kind: 'city', origins: ['AMS', 'EIN', 'RTM'], dest: '', city: '', country: '', trip: 'return', months: 3, dateFrom: null, dateTo: null, minNights: 7, maxNights: 21, maxStops: 1, alert: 'great', maxPrice: null, airlines: [] };
+    const f = w ? { ...w } : copyFrom ? { ...copyFrom, airlines: [...(copyFrom.airlines || [])] } : { kind: 'city', origins: ['AMS', 'EIN', 'RTM'], dest: '', city: '', country: '', trip: 'return', months: 3, dateFrom: null, dateTo: null, minNights: 7, maxNights: 21, maxStops: 1, alert: 'great', maxPrice: null, airlines: [], via: false };
     f.airlines = [...(f.airlines || [])];
     let when = f.dateFrom ? 'custom' : String(f.months);
     const seg = (name, opts, val) => `<div class="seg" data-seg="${name}">${opts.map(([v, l]) => `<button type="button" data-v="${v}" class="${String(v) === String(val) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
@@ -712,6 +794,9 @@
         <div class="seg" id="air-mode"><button type="button" data-m="any">Any airline</button><button type="button" data-m="pick">Choose airlines</button></div>
         <div class="hint" id="air-hint"></div>
         <div class="al-box" id="al-box" hidden><input class="input al-search" id="air-q" placeholder="Search airlines" autocomplete="off"><div class="al-list" id="al-list"></div></div></div>
+      <div class="field"><span class="lbl">Advanced</span>
+        <label class="switch-row"><input type="checkbox" id="via" ${f.via ? 'checked' : ''}><span class="switch" aria-hidden="true"></span>
+          <span><b>Via a cheaper city</b><small>Also checks a cheap flight to a hub (Oslo, Copenhagen, Stockholm, Helsinki, Istanbul, London, Frankfurt, Madrid, Athens) and the long flight from there. Separate tickets, with safe time between flights. Only shown when it saves money.</small></span></label></div>
       <div class="field"><span class="lbl">Notify me about</span>${seg('alert', [['extreme', 'Only extreme'], ['great', 'Great +'], ['good', 'Every deal']], f.alert)}
         <div class="hint">A deal is a real price drop: the cheapest fare compared with the usual cheapest fare of the last 30 days. Extreme = 45% lower, great = 30%, good = 15%.</div>
         <input class="input" style="margin-top:10px" type="number" inputmode="numeric" id="maxPrice" placeholder="And always below € (optional), e.g. 450" value="${f.maxPrice || ''}"></div>
@@ -934,7 +1019,7 @@
         const lvl = { extreme: "extreme deals", great: "great deals", good: "every deal" }[f.alert];
         const mp = +$("#maxPrice", sheet).value;
         sumEl.innerHTML = "<b>" + (f.trip === "return" ? "Return trips" : "One-way flights") + "</b> from " + esc(from || "…") + " to <b>" + esc(to) + "</b>"
-          + (f.trip === "return" ? ", " + (minN === maxN ? minN : minN + "–" + (maxN >= 45 ? "45+" : maxN)) + " nights" : "") + ", " + leaving + ", " + st + ", " + esc(al) + ". Alerts for " + lvl + (mp ? " or below " + eur(mp) : "") + ".";
+          + (f.trip === "return" ? ", " + (minN === maxN ? minN : minN + "–" + (maxN >= 45 ? "45+" : maxN)) + " nights" : "") + ", " + leaving + ", " + st + ", " + esc(al) + ($("#via", sheet).checked ? ", also via cheaper cities" : "") + ". Alerts for " + lvl + (mp ? " or below " + eur(mp) : "") + ".";
       };
       sheet.addEventListener("input", updateSum);
       sheet.addEventListener("click", () => setTimeout(updateSum, 0));
@@ -955,7 +1040,7 @@
         btn.disabled = true;
         btn.innerHTML = '<span class="spin"></span> Saving…';
         try {
-          const body = { kind: f.kind, origins: f.origins, dest: f.dest, city: f.city, country: f.country, trip: f.trip, months: f.months, dateFrom: f.dateFrom, dateTo: f.dateTo, minNights: f.minNights, maxNights: f.maxNights, maxStops: f.maxStops, alert: f.alert, maxPrice: f.maxPrice, airlines: f.airlines };
+          const body = { kind: f.kind, origins: f.origins, dest: f.dest, city: f.city, country: f.country, trip: f.trip, months: f.months, dateFrom: f.dateFrom, dateTo: f.dateTo, minNights: f.minNights, maxNights: f.maxNights, maxStops: f.maxStops, alert: f.alert, maxPrice: f.maxPrice, airlines: f.airlines, via: $('#via', sheet).checked };
           const r = await api('save', w ? { ...body, id: w.id } : body);
           closeSheet();
           await refresh();
